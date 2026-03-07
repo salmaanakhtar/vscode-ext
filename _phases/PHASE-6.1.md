@@ -1,0 +1,245 @@
+# Phase 6.1 — Approval Queue UI
+
+> Read CLAUDE.md and PROGRESS.md before starting.
+> Phase 5.2 must be complete.
+
+---
+
+## Goal
+
+Build the Approval Queue panel — the interface for reviewing and actioning agent approval requests. Connect it to the `ApprovalGate` polling mechanism established in Phase 5.1.
+
+---
+
+## Branch
+
+```bash
+git checkout main && git pull origin main
+git checkout -b phase/6.1-approval-queue-ui
+```
+
+---
+
+## Deliverables
+
+### 1. `packages/extension/src/panels/ApprovalQueuePanel.ts`
+
+```typescript
+import * as vscode from 'vscode';
+import type { ProjectNameSession } from '../ProjectNameSession';
+import type { ApprovalRequest, ApprovalResolution } from '@vscode-ext/shared';
+
+export class ApprovalQueuePanel {
+  private panel: vscode.WebviewPanel | null = null;
+  private disposables: vscode.Disposable[] = [];
+
+  constructor(
+    private context: vscode.ExtensionContext,
+    private getSession: () => ProjectNameSession | null,
+  ) {}
+
+  show(): void {
+    if (this.panel) { this.panel.reveal(); return; }
+
+    this.panel = vscode.window.createWebviewPanel(
+      'projectname.approvalQueue',
+      'vscode-ext Approvals',
+      vscode.ViewColumn.Three,
+      { enableScripts: true, retainContextWhenHidden: true }
+    );
+
+    this.panel.webview.html = this.getHtml();
+    this.panel.webview.onDidReceiveMessage(
+      async (msg) => await this.handleMessage(msg),
+      null, this.disposables
+    );
+    this.panel.onDidDispose(() => {
+      this.panel = null;
+      this.disposables.forEach(d => d.dispose());
+    });
+
+    this.refresh();
+
+    // Poll for new requests
+    const timer = setInterval(() => this.refresh(), 1000);
+    this.disposables.push({ dispose: () => clearInterval(timer) });
+  }
+
+  refresh(): void {
+    const session = this.getSession();
+    if (!this.panel || !session) return;
+
+    const pending = session.gate.getPendingRequests();
+    this.panel.webview.postMessage({ type: 'update', data: pending });
+
+    // Update badge
+    if (pending.length > 0) {
+      this.panel.badge = { value: pending.length, tooltip: `${pending.length} pending approval(s)` };
+    } else {
+      this.panel.badge = undefined;
+    }
+  }
+
+  dispose(): void { this.panel?.dispose(); }
+
+  private async handleMessage(msg: { type: string; data?: unknown }): Promise<void> {
+    const session = this.getSession();
+    if (!session) return;
+
+    if (msg.type === 'resolve') {
+      const { requestId, decision, feedback } = msg.data as {
+        requestId: string;
+        decision: 'approved' | 'rejected';
+        feedback?: string;
+      };
+
+      const resolution: ApprovalResolution = {
+        decision,
+        feedback,
+        resolvedAt: new Date().toISOString(),
+      };
+
+      // Store in workspaceState for the polling handler in ProjectNameSession
+      await this.context.workspaceState.update(
+        `approval:resolution:${requestId}`, resolution
+      );
+
+      this.refresh();
+    }
+  }
+
+  private getHtml(): string {
+    const nonce = getNonce();
+    const riskColors: Record<string, string> = {
+      low: '#dae8fc', medium: '#ffe6cc', high: '#f8cecc'
+    };
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline';">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 12px; }
+    h2 { margin-bottom: 12px; font-size: 14px; opacity: 0.8; }
+    .empty { opacity: 0.5; font-style: italic; margin-top: 20px; text-align: center; }
+    .request { border: 1px solid var(--vscode-panel-border); border-radius: 6px; margin-bottom: 12px; overflow: hidden; }
+    .request-header { padding: 8px 12px; font-weight: bold; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+    .request-body { padding: 10px 12px; }
+    .request-body p { margin-bottom: 6px; font-size: 12px; }
+    .context-box { background: var(--vscode-textBlockQuote-background); border-left: 3px solid var(--vscode-textBlockQuote-border); padding: 6px 10px; margin: 8px 0; font-size: 11px; font-family: var(--vscode-editor-font-family); white-space: pre-wrap; max-height: 80px; overflow-y: auto; }
+    .actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+    .actions input { flex: 1; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 4px 8px; border-radius: 3px; font-size: 12px; }
+    .btn { padding: 4px 12px; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; }
+    .btn-approve { background: #28a745; color: white; }
+    .btn-reject { background: #dc3545; color: white; }
+    .risk-badge { padding: 2px 6px; border-radius: 3px; font-size: 10px; text-transform: uppercase; font-weight: bold; }
+    .risk-low { background: #dae8fc; color: #006eaf; }
+    .risk-medium { background: #ffe6cc; color: #d6720c; }
+    .risk-high { background: #f8cecc; color: #b85450; }
+  </style>
+</head>
+<body>
+  <h2>Approval Queue</h2>
+  <div id="queue"><p class="empty">No pending approvals</p></div>
+
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+
+    function render(requests) {
+      const queue = document.getElementById('queue');
+      if (!requests || requests.length === 0) {
+        queue.innerHTML = '<p class="empty">No pending approvals ✓</p>';
+        return;
+      }
+
+      queue.innerHTML = requests.map(r => \`
+        <div class="request">
+          <div class="request-header" style="background: \${riskBg(r.riskLevel)}">
+            <span>\${r.agentId} — \${r.action}</span>
+            <span class="risk-badge risk-\${r.riskLevel}">\${r.riskLevel}</span>
+          </div>
+          <div class="request-body">
+            <p><strong>\${r.description}</strong></p>
+            <div class="context-box">\${escHtml(r.context)}</div>
+            <p style="font-size:11px;opacity:0.6">Task: \${r.taskId} · Requested: \${new Date(r.requestedAt).toLocaleTimeString()}</p>
+            <div class="actions">
+              <input type="text" id="feedback-\${r.id}" placeholder="Optional feedback..." />
+              <button class="btn btn-approve" onclick="resolve('\${r.id}', 'approved')">Approve</button>
+              <button class="btn btn-reject" onclick="resolve('\${r.id}', 'rejected')">Reject</button>
+            </div>
+          </div>
+        </div>
+      \`).join('');
+    }
+
+    function riskBg(level) {
+      return { low: 'rgba(218,232,252,0.2)', medium: 'rgba(255,230,204,0.2)', high: 'rgba(248,206,204,0.2)' }[level] || 'transparent';
+    }
+
+    function escHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function resolve(requestId, decision) {
+      const feedback = document.getElementById('feedback-' + requestId)?.value;
+      vscode.postMessage({ type: 'resolve', data: { requestId, decision, feedback } });
+    }
+
+    window.addEventListener('message', e => {
+      if (e.data.type === 'update') render(e.data.data);
+    });
+  </script>
+</body>
+</html>`;
+  }
+}
+
+function getNonce(): string {
+  let text = '';
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 32; i++) text += chars.charAt(Math.floor(Math.random() * chars.length));
+  return text;
+}
+```
+
+### 2. Wire ApprovalQueuePanel into extension.ts
+
+Update `projectname.openApprovalQueue` command in `commands/index.ts` to show the real panel instead of the stub.
+
+---
+
+## Acceptance Criteria
+
+- [ ] Approval queue panel opens and shows pending requests
+- [ ] Approve/Reject buttons resolve the pending approval
+- [ ] Feedback is passed back to the agent
+- [ ] Panel badge shows count of pending items
+- [ ] Empty state shows when queue is clear
+
+---
+
+## Self-Review & Merge
+
+```bash
+cd packages/extension && npm run typecheck
+cd ../.. && npm run lint
+
+git checkout main
+git merge phase/6.1-approval-queue-ui --no-ff -m "merge: complete phase 6.1 — approval queue ui"
+git push origin main
+git tag -a "phase-6.1-complete" -m "Phase 6.1 complete: approval queue ui"
+git push origin --tags
+```
+
+---
+
+## Next Phase
+
+**Phase 7.1 — Templates, Agent Export/Import & Polish**
+Load `_phases/PHASE-7.1.md` in the next session.
+
+---
+---
+

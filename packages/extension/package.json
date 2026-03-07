@@ -1,0 +1,50 @@
+{
+  "name": "vscode-ext",
+  "displayName": "vscode-ext",
+  "description": "Persistent AI agent teams for your VS Code projects",
+  "version": "0.1.0",
+  "private": true,
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["AI", "Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "typecheck": "tsc --noEmit",
+    "watch": "npm run build -- --watch",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "@vscode-ext/core": "*",
+    "@vscode-ext/shared": "*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.0.0",
+    "esbuild": "^0.20.0"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [{ "id": "projectname-sidebar", "title": "vscode-ext", "icon": "resources/icon.svg" }],
+      "panel": [{ "id": "projectname-panel", "title": "vscode-ext Approvals" }]
+    },
+    "views": {
+      "projectname-sidebar": [
+        { "id": "projectname.agentTeam", "name": "Agent Team", "type": "webview" },
+        { "id": "projectname.agentActivity", "name": "Activity", "type": "tree" }
+      ],
+      "projectname-panel": [
+        { "id": "projectname.approvalQueue", "name": "Approval Queue", "type": "webview" }
+      ]
+    },
+    "commands": [
+      { "command": "projectname.initTeam", "title": "vscode-ext: Initialise Agent Team" },
+      { "command": "projectname.addAgent", "title": "vscode-ext: Add Agent" },
+      { "command": "projectname.startTeamLead", "title": "vscode-ext: Start Team Lead" },
+      { "command": "projectname.openApprovalQueue", "title": "vscode-ext: Open Approval Queue" },
+      { "command": "projectname.exportAgent", "title": "vscode-ext: Export Agent" },
+      { "command": "projectname.importAgent", "title": "vscode-ext: Import Agent" },
+      { "command": "projectname.viewProgress", "title": "vscode-ext: View Agent Progress" }
+    ]
+  }
+}

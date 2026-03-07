@@ -1,0 +1,23 @@
+{
+  "name": "@vscode-ext/core",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@vscode-ext/shared": "*"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "latest",
+    "better-sqlite3": "^9.0.0",
+    "chokidar": "^3.6.0",
+    "simple-git": "^3.22.0"
+  }
+}
