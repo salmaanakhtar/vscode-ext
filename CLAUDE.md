@@ -1,4 +1,4 @@
-# vscode-ext — Master Development Context
+# [ProjectName] — Master Development Context
 
 > **This file is the single source of truth for all Claude Code sessions.**
 > Read this file completely before writing any code. If PROGRESS.md exists, read it second.
@@ -6,9 +6,9 @@
 
 ---
 
-## What Is vscode-ext?
+## What Is [ProjectName]?
 
-vscode-ext is a **VS Code extension** that brings persistent, project-scoped AI agent teams into a developer's existing workflow. Instead of a single AI assistant, developers register and manage a coordinated team of specialised agents — each with its own memory, tools, and instructions — that collaborate on a shared codebase.
+[ProjectName] is a **VS Code extension** that brings persistent, project-scoped AI agent teams into a developer's existing workflow. Instead of a single AI assistant, developers register and manage a coordinated team of specialised agents — each with its own memory, tools, and instructions — that collaborate on a shared codebase.
 
 A **Team Lead** agent acts as the primary orchestrator. Registered agents are specialists (Frontend, Backend, QA, Security, etc.). Developers retain full control through human-in-the-loop approval gates.
 
@@ -45,7 +45,7 @@ These rules must never be violated under any circumstances. If you believe a rul
 ## Monorepo Structure
 
 ```
-vscode-ext/
+[projectname]/
 ├── CLAUDE.md                        # This file — always read first
 ├── PROGRESS.md                      # Session handoff log — read second if it exists
 ├── package.json                     # Root workspace package.json (npm workspaces)
@@ -67,7 +67,7 @@ vscode-ext/
 │   │   └── src/
 │   │       ├── memory/              # MemoryAdapter + backends
 │   │       ├── registry/            # TeamRegistry
-│   │       ├── runtime/             # AgentRuntime (Claude Agent SDK)
+│   │       ├── runtime/             # AgentRuntime (Claude Code CLI subprocess)
 │   │       ├── messaging/           # MessageBus
 │   │       ├── approval/            # ApprovalGate
 │   │       ├── orchestrator/        # Orchestrator
@@ -148,7 +148,7 @@ interface Agent {
   role: string;
   model: ModelId;
   template?: string;
-  maxBudgetUsd: number;
+  maxTurns: number;          // max CLI turns per task (subscription mode — no per-call USD billing)
   git: GitPermissions;
   approvalRequired: ActionType[];
   isTeamLead: boolean;
@@ -242,7 +242,7 @@ interface TeamConfig {
 |-------|-----------|
 | Extension Shell | TypeScript, VS Code Extension API |
 | Core Engine | TypeScript / Node.js (zero vscode deps) |
-| Agent Runtime | `@anthropic-ai/claude-code` (Claude Agent SDK) |
+| Agent Runtime | Claude Code CLI (`claude --print`) via subprocess — uses user's Pro/Max subscription |
 | UI Panels | VS Code Webview API + React + Tailwind CSS |
 | Memory (default) | Local markdown/JSON files via Node.js `fs` |
 | Memory (SQLite) | `better-sqlite3` |
@@ -264,12 +264,12 @@ git add -A
 git commit -m "chore: initial commit"
 
 # Create GitHub repo and push
-gh repo create vscode-ext --private --source=. --remote=origin --push
+gh repo create [projectname] --private --source=. --remote=origin --push
 ```
 
 If the repo already exists:
 ```bash
-git remote add origin https://github.com/[username]/vscode-ext.git
+git remote add origin https://github.com/[username]/[projectname].git
 git push -u origin main
 ```
 
@@ -372,7 +372,7 @@ Update PROGRESS.md before every push. It is the handoff document for the next se
 Maintain this exact format so future sessions can parse it reliably:
 
 ```markdown
-# vscode-ext — Development Progress
+# [ProjectName] — Development Progress
 
 ## Last Updated
 [ISO8601 timestamp]
@@ -506,7 +506,15 @@ A sub-phase is complete when:
 ## Environment Variables
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-...   # Required for Claude Agent SDK
+# No ANTHROPIC_API_KEY required.
+# Authentication is handled by the user's local Claude Code installation.
+# Users must have Claude Code installed and authenticated:
+#   npm install -g @anthropic-ai/claude-code
+#   claude login
+#
+# The extension checks for claude CLI availability at startup and
+# surfaces a clear error message if not found.
+
 GITHUB_TOKEN=ghp_...           # Optional — gh CLI handles auth normally
 ```
 

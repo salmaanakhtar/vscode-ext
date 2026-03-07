@@ -1,4 +1,4 @@
-# Phase 3.1 — Agent Runtime (Claude Agent SDK Integration)
+# Phase 3.1 — Agent Runtime (Claude Code CLI Integration)
 
 > Read CLAUDE.md and PROGRESS.md before starting.
 > Phases 2.1 and 2.2 must be complete.
@@ -7,7 +7,37 @@
 
 ## Goal
 
-Implement `AgentRuntime` in `packages/core/src/runtime/`. This is the core module that wraps the Claude Agent SDK, manages agent sessions, builds system prompts, and executes tasks.
+Implement `AgentRuntime` in `packages/core/src/runtime/`. This is the core module that
+spawns agents by invoking the **local `claude` CLI as a subprocess** (`claude -p`), manages
+output streaming, builds system prompts, and wraps results.
+
+**No API key. No `@anthropic-ai/claude-agent-sdk` import. No raw Anthropic API calls.**
+
+Authentication is handled entirely by the user's local Claude Code installation. Agents
+run on the user's Pro/Max subscription quota, exactly like Cline and Repo Prompt do.
+
+---
+
+## How It Works
+
+The `claude` CLI (installed via `npm install -g @anthropic-ai/claude-code`) exposes a
+non-interactive "print" mode via `claude -p`:
+
+```bash
+# Basic usage
+claude -p "Your task here"
+
+# With system prompt and tools
+claude -p "Your task here" \
+  --system-prompt "You are a backend specialist..." \
+  --allowedTools "Read,Write,Bash" \
+  --output-format stream-json
+
+# Resume a session
+claude -p "Continue the task" --resume <session-id>
+```
+
+`AgentRuntime` wraps this pattern programmatically using Node.js `child_process.spawn`.
 
 ---
 
@@ -20,38 +50,217 @@ git checkout -b phase/3.1-agent-runtime
 
 ---
 
-## Key Context
+## Prerequisites Check
 
-The Claude Agent SDK is `@anthropic-ai/claude-code`. It was renamed from the Claude Code SDK in 2025. The primary function is `query()` which runs an agent session.
+At runtime (not at build time), verify `claude` is available:
 
 ```typescript
-// SDK usage pattern
-import { query } from '@anthropic-ai/claude-code';
+import { execSync } from 'child_process';
 
-const result = await query({
-  prompt: 'Your task here',
-  options: {
-    systemPrompt: 'Agent instructions',
-    allowedTools: ['Read', 'Write', 'Bash'],
-    maxBudgetUsd: 1.0,
-    // resume: 'session-id' for warm sessions
+export function checkClaudeInstalled(): { installed: boolean; version?: string; error?: string } {
+  try {
+    const version = execSync('claude --version', { encoding: 'utf-8' }).trim();
+    return { installed: true, version };
+  } catch {
+    return {
+      installed: false,
+      error: 'Claude Code CLI not found. Install it with: npm install -g @anthropic-ai/claude-code\nThen log in with: claude login'
+    };
   }
-});
+}
 ```
-
-Check the installed SDK for exact API surface — the above is approximate. Adapt to the actual SDK API.
 
 ---
 
 ## Deliverables
 
-### 1. `packages/core/src/runtime/SystemPromptBuilder.ts`
+### 1. `packages/core/src/runtime/ClaudeCliRunner.ts`
 
-Builds the stacked system prompt for an agent session:
+Low-level wrapper around `claude -p`. Returns a promise that resolves with the full
+output, and emits streaming events via an EventEmitter.
 
 ```typescript
-import type { Agent } from '@vscode-ext/shared';
-import { TEAM_LEAD_ID } from '@vscode-ext/shared';
+import { spawn } from 'child_process';
+import { EventEmitter } from 'events';
+import { logger } from '@[projectname]/shared';
+
+export interface CliRunOptions {
+  prompt: string;
+  systemPrompt?: string;
+  allowedTools?: string[];
+  cwd?: string;
+  sessionId?: string;        // for --resume
+  outputFormat?: 'text' | 'stream-json';
+  abortSignal?: AbortSignal;
+}
+
+export interface CliRunResult {
+  output: string;            // final text output
+  sessionId?: string;        // session ID for warm resume
+  costUsd?: number;
+  exitCode: number;
+}
+
+export class ClaudeCliRunner extends EventEmitter {
+
+  async run(options: CliRunOptions): Promise<CliRunResult> {
+    const args = this.buildArgs(options);
+    logger.debug('Spawning claude CLI', { args: args.slice(0, 5) });
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn('claude', args, {
+        cwd: options.cwd ?? process.cwd(),
+        env: { ...process.env },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      if (options.abortSignal) {
+        options.abortSignal.addEventListener('abort', () => {
+          proc.kill('SIGTERM');
+        });
+      }
+
+      const stdoutChunks: string[] = [];
+      const stderrChunks: string[] = [];
+      let sessionId: string | undefined;
+      let costUsd: number | undefined;
+
+      proc.stdout.setEncoding('utf-8');
+      proc.stderr.setEncoding('utf-8');
+
+      proc.stdout.on('data', (chunk: string) => {
+        stdoutChunks.push(chunk);
+
+        if (options.outputFormat === 'stream-json') {
+          const lines = chunk.split('\n').filter(Boolean);
+          for (const line of lines) {
+            try {
+              const msg = JSON.parse(line) as Record<string, unknown>;
+              if (msg['type'] === 'system' && typeof msg['session_id'] === 'string') {
+                sessionId = msg['session_id'];
+              }
+              if (msg['type'] === 'result' && typeof msg['cost_usd'] === 'number') {
+                costUsd = msg['cost_usd'];
+              }
+              if (
+                msg['type'] === 'stream_event' &&
+                typeof msg['event'] === 'object' &&
+                msg['event'] !== null
+              ) {
+                const event = msg['event'] as Record<string, unknown>;
+                if (event['delta'] && typeof event['delta'] === 'object') {
+                  const delta = event['delta'] as Record<string, unknown>;
+                  if (delta['type'] === 'text_delta' && typeof delta['text'] === 'string') {
+                    this.emit('text', delta['text']);
+                  }
+                }
+              }
+            } catch {
+              this.emit('raw', line);
+            }
+          }
+        } else {
+          this.emit('text', chunk);
+        }
+      });
+
+      proc.stderr.on('data', (chunk: string) => {
+        stderrChunks.push(chunk);
+        this.emit('stderr', chunk);
+      });
+
+      proc.on('error', (err) => {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          reject(new Error(
+            'Claude Code CLI not found in PATH.\n' +
+            'Install: npm install -g @anthropic-ai/claude-code\n' +
+            'Login:   claude login'
+          ));
+        } else {
+          reject(err);
+        }
+      });
+
+      proc.on('close', (code) => {
+        const exitCode = code ?? 1;
+        const rawOutput = stdoutChunks.join('');
+
+        if (exitCode !== 0) {
+          const stderr = stderrChunks.join('');
+          if (stderr.includes('not logged in') || stderr.includes('unauthorized')) {
+            reject(new Error(
+              'Claude Code is not logged in. Run: claude login\n' +
+              'Make sure you have a Pro or Max subscription.'
+            ));
+            return;
+          }
+          logger.warn('claude CLI exited with non-zero code', { exitCode, stderr: stderr.slice(0, 200) });
+        }
+
+        const output = options.outputFormat === 'stream-json'
+          ? this.extractTextFromStreamJson(rawOutput)
+          : rawOutput;
+
+        resolve({ output, sessionId, costUsd, exitCode });
+      });
+
+      // Write prompt to stdin
+      proc.stdin.write(options.prompt);
+      proc.stdin.end();
+    });
+  }
+
+  private buildArgs(options: CliRunOptions): string[] {
+    const args: string[] = ['-p', '-']; // read from stdin
+
+    args.push('--output-format', options.outputFormat ?? 'stream-json');
+
+    if (options.systemPrompt) {
+      args.push('--system-prompt', options.systemPrompt);
+    }
+
+    if (options.allowedTools && options.allowedTools.length > 0) {
+      args.push('--allowedTools', options.allowedTools.join(','));
+    }
+
+    if (options.sessionId) {
+      args.push('--resume', options.sessionId);
+    }
+
+    return args;
+  }
+
+  private extractTextFromStreamJson(raw: string): string {
+    const textParts: string[] = [];
+    const lines = raw.split('\n').filter(Boolean);
+
+    for (const line of lines) {
+      try {
+        const msg = JSON.parse(line) as Record<string, unknown>;
+        if (msg['type'] === 'result' && typeof msg['result'] === 'string') {
+          return msg['result'];
+        }
+        if (msg['type'] === 'stream_event' && typeof msg['event'] === 'object' && msg['event'] !== null) {
+          const event = msg['event'] as Record<string, unknown>;
+          const delta = event['delta'] as Record<string, unknown> | undefined;
+          if (delta?.['type'] === 'text_delta' && typeof delta['text'] === 'string') {
+            textParts.push(delta['text']);
+          }
+        }
+      } catch {
+        // skip non-JSON lines
+      }
+    }
+
+    return textParts.join('');
+  }
+}
+```
+
+### 2. `packages/core/src/runtime/SystemPromptBuilder.ts`
+
+```typescript
+import { TEAM_LEAD_ID } from '@[projectname]/shared';
 import { TeamRegistry } from '../registry/TeamRegistry';
 import { MemoryManager } from '../memory/MemoryManager';
 
@@ -64,68 +273,54 @@ export class SystemPromptBuilder {
   async build(agentId: string): Promise<string> {
     const parts: string[] = [];
 
-    // 1. Project info
     const projectInfo = await this.registry.readProjectInfo();
-    if (projectInfo) {
-      parts.push('# Project Information\n\n' + projectInfo);
-    }
+    if (projectInfo) parts.push('# Project Information\n\n' + projectInfo);
 
-    // 2. Project-level CLAUDE.md (shared instructions)
     const projectClaude = await this.registry.readProjectClaude();
-    if (projectClaude) {
-      parts.push('# Shared Team Instructions\n\n' + projectClaude);
-    }
+    if (projectClaude) parts.push('# Shared Team Instructions\n\n' + projectClaude);
 
-    // 3. Agent-specific CLAUDE.md
     const agentClaude = await this.registry.readAgentClaude(agentId);
-    if (agentClaude) {
-      parts.push('# Your Role and Instructions\n\n' + agentClaude);
-    }
+    if (agentClaude) parts.push('# Your Role and Instructions\n\n' + agentClaude);
 
-    // 4. Agent private memory (last 20 entries)
     const agentContext = await this.memory.getAgentContext(agentId, 20);
-    if (agentContext) {
-      parts.push('# Your Memory (Recent)\n\n' + agentContext);
-    }
+    if (agentContext) parts.push('# Your Memory (Recent)\n\n' + agentContext);
 
-    // 5. Project shared memory (last 10 entries)
     const projectContext = await this.memory.getProjectContext(10);
-    if (projectContext) {
-      parts.push('# Project Shared Memory\n\n' + projectContext);
-    }
+    if (projectContext) parts.push('# Project Shared Memory\n\n' + projectContext);
 
     return parts.join('\n\n---\n\n');
   }
 }
 ```
 
-### 2. `packages/core/src/runtime/AgentRuntime.ts`
+### 3. `packages/core/src/runtime/AgentRuntime.ts`
 
 ```typescript
-import type { Agent, Task, Result, AgentStatus } from '@vscode-ext/shared';
-import { generateTaskId, logger, TEAM_LEAD_ID } from '@vscode-ext/shared';
+import type { Agent, Task, Result, AgentStatus } from '@[projectname]/shared';
+import { generateTaskId, logger, TEAM_LEAD_ID } from '@[projectname]/shared';
 import { TeamRegistry } from '../registry/TeamRegistry';
 import { MemoryManager } from '../memory/MemoryManager';
 import { SystemPromptBuilder } from './SystemPromptBuilder';
+import { ClaudeCliRunner } from './ClaudeCliRunner';
+import { checkClaudeInstalled } from './checkClaude';
 
 export interface TaskResult {
   taskId: string;
   agentId: string;
   output: string;
-  cost?: number;
-  tokensUsed?: number;
+  costUsd?: number;
 }
 
 export interface RuntimeEvents {
   onTaskStart?: (task: Task) => void;
   onTaskComplete?: (result: TaskResult) => void;
   onTaskError?: (taskId: string, error: Error) => void;
-  onApprovalRequired?: (agentId: string, action: string, context: string) => Promise<boolean>;
+  onTextChunk?: (agentId: string, text: string) => void;
   onStatusChange?: (status: AgentStatus) => void;
 }
 
 export class AgentRuntime {
-  private activeSessions: Map<string, string> = new Map(); // agentId -> sessionId
+  private activeSessions: Map<string, string> = new Map();
   private activeStatuses: Map<string, AgentStatus> = new Map();
   private promptBuilder: SystemPromptBuilder;
   private abortControllers: Map<string, AbortController> = new Map();
@@ -136,6 +331,11 @@ export class AgentRuntime {
     private events: RuntimeEvents = {},
   ) {
     this.promptBuilder = new SystemPromptBuilder(registry, memory);
+  }
+
+  static checkPrerequisites(): { ok: boolean; error?: string } {
+    const result = checkClaudeInstalled();
+    return result.installed ? { ok: true } : { ok: false, error: result.error };
   }
 
   async runTask(agentId: string, prompt: string): Promise<Result<TaskResult>> {
@@ -158,69 +358,47 @@ export class AgentRuntime {
     this.updateStatus(agentId, 'thinking', task.id);
     this.events.onTaskStart?.(task);
 
+    const abortController = new AbortController();
+    this.abortControllers.set(task.id, abortController);
+
     try {
-      // Build system prompt
       const systemPrompt = await this.promptBuilder.build(agentId);
-
-      // Get SDK
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { query } = require('@anthropic-ai/claude-code');
-
-      // Set up abort controller
-      const abortController = new AbortController();
-      this.abortControllers.set(task.id, abortController);
-
-      // Build tool list
       const allowedTools = agent.builtinTools ?? ['Read', 'Write', 'Bash'];
-
-      // Add MCP servers if configured
-      const mcpServers = agent.mcpServers?.map(s => ({
-        type: 'url' as const,
-        url: s.url,
-        name: s.name,
-      })) ?? [];
-
-      // Resume warm session if available
       const sessionId = this.activeSessions.get(agentId);
 
-      const queryOptions: Record<string, unknown> = {
-        systemPrompt,
-        allowedTools,
-        maxBudgetUsd: agent.maxBudgetUsd,
-        abortController,
-      };
-
-      if (sessionId) queryOptions['resume'] = sessionId;
-      if (mcpServers.length > 0) queryOptions['mcpServers'] = mcpServers;
+      const runner = new ClaudeCliRunner();
+      runner.on('text', (text: string) => {
+        this.events.onTextChunk?.(agentId, text);
+      });
 
       this.updateStatus(agentId, 'writing', task.id);
 
-      // Run the agent
-      const sdkResult = await query(prompt, queryOptions);
+      const cliResult = await runner.run({
+        prompt,
+        systemPrompt,
+        allowedTools,
+        cwd: this.registry.getProjectRoot(),
+        sessionId,
+        outputFormat: 'stream-json',
+        abortSignal: abortController.signal,
+      });
 
-      // Extract output — adapt based on actual SDK response shape
-      const output = this.extractOutput(sdkResult);
-      const cost = this.extractCost(sdkResult);
-      const newSessionId = this.extractSessionId(sdkResult);
-
-      // Cache session for warm resume
-      if (newSessionId) {
-        this.activeSessions.set(agentId, newSessionId);
+      if (cliResult.sessionId) {
+        this.activeSessions.set(agentId, cliResult.sessionId);
       }
 
-      // Write task summary to memory
       await this.memory.write(
         agentId,
         'task_summary',
-        `Task completed: ${prompt.substring(0, 100)}\nResult: ${output.substring(0, 200)}`,
+        `Task: ${prompt.substring(0, 100)}\nResult: ${cliResult.output.substring(0, 200)}`,
         ['task', task.id]
       );
 
       const taskResult: TaskResult = {
         taskId: task.id,
         agentId,
-        output,
-        cost,
+        output: cliResult.output,
+        costUsd: cliResult.costUsd,
       };
 
       this.updateStatus(agentId, 'idle');
@@ -247,7 +425,6 @@ export class AgentRuntime {
   }
 
   async endSession(agentId: string): Promise<void> {
-    // Compact memory at session end
     await this.memory.compact(agentId);
     this.activeSessions.delete(agentId);
     this.updateStatus(agentId, 'offline');
@@ -262,11 +439,7 @@ export class AgentRuntime {
     return Array.from(this.activeStatuses.values());
   }
 
-  private updateStatus(
-    agentId: string,
-    state: AgentStatus['state'],
-    taskId?: string
-  ): void {
+  private updateStatus(agentId: string, state: AgentStatus['state'], taskId?: string): void {
     const existing = this.activeStatuses.get(agentId);
     const status: AgentStatus = {
       agentId,
@@ -294,56 +467,130 @@ export class AgentRuntime {
       builtinTools: ['Read', 'Write', 'Bash', 'Glob', 'Grep', 'WebFetch'],
     };
   }
+}
+```
 
-  // These methods extract data from the SDK response.
-  // Adapt based on actual @anthropic-ai/claude-code SDK response shape.
-  private extractOutput(sdkResult: unknown): string {
-    if (!sdkResult || typeof sdkResult !== 'object') return String(sdkResult);
-    const r = sdkResult as Record<string, unknown>;
-    // Try common SDK response patterns
-    if (typeof r['result'] === 'string') return r['result'];
-    if (typeof r['output'] === 'string') return r['output'];
-    if (Array.isArray(r['content'])) {
-      return (r['content'] as Array<{ type: string; text?: string }>)
-        .filter(c => c.type === 'text')
-        .map(c => c.text ?? '')
-        .join('\n');
-    }
-    return JSON.stringify(sdkResult);
-  }
+### 4. `packages/core/src/runtime/checkClaude.ts`
 
-  private extractCost(sdkResult: unknown): number | undefined {
-    if (!sdkResult || typeof sdkResult !== 'object') return undefined;
-    const r = sdkResult as Record<string, unknown>;
-    if (typeof r['cost_usd'] === 'number') return r['cost_usd'];
-    if (typeof r['totalCostUsd'] === 'number') return r['totalCostUsd'];
-    return undefined;
-  }
+```typescript
+import { execSync } from 'child_process';
 
-  private extractSessionId(sdkResult: unknown): string | undefined {
-    if (!sdkResult || typeof sdkResult !== 'object') return undefined;
-    const r = sdkResult as Record<string, unknown>;
-    if (typeof r['sessionId'] === 'string') return r['sessionId'];
-    if (typeof r['session_id'] === 'string') return r['session_id'];
-    return undefined;
+export interface ClaudeCheckResult {
+  installed: boolean;
+  version?: string;
+  error?: string;
+}
+
+export function checkClaudeInstalled(): ClaudeCheckResult {
+  try {
+    const version = execSync('claude --version', { encoding: 'utf-8', timeout: 5000 }).trim();
+    return { installed: true, version };
+  } catch {
+    return {
+      installed: false,
+      error:
+        'Claude Code CLI not found in PATH.\n' +
+        'Install it with: npm install -g @anthropic-ai/claude-code\n' +
+        'Then log in: claude login\n' +
+        'A Claude Pro or Max subscription is required.',
+    };
   }
 }
 ```
 
-### 3. `packages/core/src/runtime/index.ts`
+### 5. `packages/core/src/runtime/index.ts`
 
 ```typescript
 export { AgentRuntime } from './AgentRuntime';
 export { SystemPromptBuilder } from './SystemPromptBuilder';
+export { ClaudeCliRunner } from './ClaudeCliRunner';
+export { checkClaudeInstalled } from './checkClaude';
 export type { TaskResult, RuntimeEvents } from './AgentRuntime';
+export type { CliRunOptions, CliRunResult } from './ClaudeCliRunner';
+export type { ClaudeCheckResult } from './checkClaude';
 ```
 
-### 4. Unit Tests
+### 6. Unit Tests
+
+`packages/core/src/__tests__/runtime/ClaudeCliRunner.test.ts`:
+
+```typescript
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ClaudeCliRunner } from '../../runtime/ClaudeCliRunner';
+import * as childProcess from 'child_process';
+import { EventEmitter } from 'events';
+import type { ChildProcess } from 'child_process';
+
+vi.mock('child_process');
+
+function makeMockProc(stdout: string, exitCode = 0): ChildProcess {
+  const proc = new EventEmitter() as unknown as ChildProcess & {
+    stdout: EventEmitter & { setEncoding: ReturnType<typeof vi.fn> };
+    stderr: EventEmitter & { setEncoding: ReturnType<typeof vi.fn> };
+    stdin: { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
+    kill: ReturnType<typeof vi.fn>;
+  };
+
+  (proc as unknown as Record<string, unknown>).stdout = Object.assign(new EventEmitter(), { setEncoding: vi.fn() });
+  (proc as unknown as Record<string, unknown>).stderr = Object.assign(new EventEmitter(), { setEncoding: vi.fn() });
+  (proc as unknown as Record<string, unknown>).stdin = { write: vi.fn(), end: vi.fn() };
+  (proc as unknown as Record<string, unknown>).kill = vi.fn();
+
+  setImmediate(() => {
+    (proc as unknown as { stdout: EventEmitter }).stdout.emit('data', stdout);
+    proc.emit('close', exitCode);
+  });
+
+  return proc;
+}
+
+describe('ClaudeCliRunner', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('resolves with output on success', async () => {
+    const jsonLine = JSON.stringify({ type: 'result', result: 'Hello world', cost_usd: 0.01 }) + '\n';
+    vi.mocked(childProcess.spawn).mockReturnValue(makeMockProc(jsonLine));
+
+    const runner = new ClaudeCliRunner();
+    const result = await runner.run({ prompt: 'Say hello', outputFormat: 'stream-json' });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toBe('Hello world');
+    expect(result.costUsd).toBe(0.01);
+  });
+
+  it('emits text events from stream-json delta', async () => {
+    const streamLine = JSON.stringify({
+      type: 'stream_event',
+      event: { delta: { type: 'text_delta', text: 'chunk ' } }
+    }) + '\n';
+    vi.mocked(childProcess.spawn).mockReturnValue(makeMockProc(streamLine));
+
+    const runner = new ClaudeCliRunner();
+    const chunks: string[] = [];
+    runner.on('text', (t: string) => chunks.push(t));
+
+    await runner.run({ prompt: 'test', outputFormat: 'stream-json' });
+    expect(chunks).toContain('chunk ');
+  });
+
+  it('throws with install instructions on ENOENT', async () => {
+    const proc = makeMockProc('', 1);
+    vi.mocked(childProcess.spawn).mockReturnValue(proc);
+    setImmediate(() => {
+      proc.emit('error', Object.assign(new Error('not found'), { code: 'ENOENT' }));
+    });
+
+    const runner = new ClaudeCliRunner();
+    await expect(runner.run({ prompt: 'test' })).rejects.toThrow('npm install -g @anthropic-ai/claude-code');
+  });
+});
+```
 
 `packages/core/src/__tests__/runtime/SystemPromptBuilder.test.ts`:
 
 ```typescript
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { SystemPromptBuilder } from '../../runtime/SystemPromptBuilder';
 
 describe('SystemPromptBuilder', () => {
@@ -353,7 +600,6 @@ describe('SystemPromptBuilder', () => {
       readProjectClaude: vi.fn().mockResolvedValue('Shared instructions'),
       readAgentClaude: vi.fn().mockResolvedValue('Agent instructions'),
     };
-
     const mockMemory = {
       getAgentContext: vi.fn().mockResolvedValue('Agent memory'),
       getProjectContext: vi.fn().mockResolvedValue('Project memory'),
@@ -364,20 +610,12 @@ describe('SystemPromptBuilder', () => {
     const prompt = await builder.build('frontend');
 
     expect(prompt).toContain('Project info');
-    expect(prompt).toContain('Shared instructions');
     expect(prompt).toContain('Agent instructions');
-    expect(prompt).toContain('Agent memory');
-    expect(prompt).toContain('Project memory');
-
-    // Verify order
-    const piIdx = prompt.indexOf('Project info');
-    const siIdx = prompt.indexOf('Shared instructions');
-    const aiIdx = prompt.indexOf('Agent instructions');
-    expect(piIdx).toBeLessThan(siIdx);
-    expect(siIdx).toBeLessThan(aiIdx);
+    expect(prompt.indexOf('Project info')).toBeLessThan(prompt.indexOf('Shared instructions'));
+    expect(prompt.indexOf('Shared instructions')).toBeLessThan(prompt.indexOf('Agent instructions'));
   });
 
-  it('handles missing files gracefully', async () => {
+  it('returns empty string when all context is empty', async () => {
     const mockRegistry = {
       readProjectInfo: vi.fn().mockResolvedValue(''),
       readProjectClaude: vi.fn().mockResolvedValue(''),
@@ -387,36 +625,84 @@ describe('SystemPromptBuilder', () => {
       getAgentContext: vi.fn().mockResolvedValue(''),
       getProjectContext: vi.fn().mockResolvedValue(''),
     };
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const builder = new SystemPromptBuilder(mockRegistry as any, mockMemory as any);
-    const prompt = await builder.build('frontend');
-    expect(prompt).toBe('');
+    expect(await builder.build('frontend')).toBe('');
+  });
+});
+```
+
+`packages/core/src/__tests__/runtime/checkClaude.test.ts`:
+
+```typescript
+import { describe, it, expect, vi } from 'vitest';
+import * as childProcess from 'child_process';
+import { checkClaudeInstalled } from '../../runtime/checkClaude';
+
+vi.mock('child_process');
+
+describe('checkClaudeInstalled', () => {
+  it('returns installed=true when claude is in PATH', () => {
+    vi.mocked(childProcess.execSync).mockReturnValue('claude 1.0.0\n' as unknown as Buffer);
+    const result = checkClaudeInstalled();
+    expect(result.installed).toBe(true);
+  });
+
+  it('returns installed=false with helpful error when not found', () => {
+    vi.mocked(childProcess.execSync).mockImplementation(() => { throw new Error('not found'); });
+    const result = checkClaudeInstalled();
+    expect(result.installed).toBe(false);
+    expect(result.error).toContain('npm install -g @anthropic-ai/claude-code');
+    expect(result.error).toContain('claude login');
   });
 });
 ```
 
 ---
 
+## Package.json Changes
+
+`@anthropic-ai/claude-code` is a **global tool** the user installs themselves. Do NOT bundle it as a runtime dependency. Add it only as a `peerDependency`:
+
+```json
+{
+  "peerDependencies": {
+    "@anthropic-ai/claude-code": ">=1.0.0"
+  }
+}
+```
+
+Do **not** add `@anthropic-ai/claude-agent-sdk`, `@anthropic-ai/sdk`, or any raw API client as a dependency.
+
+---
+
 ## Important Notes
 
-1. The `@anthropic-ai/claude-code` SDK API may differ slightly from what is shown above. After installing, run `npm info @anthropic-ai/claude-code` and inspect the package to get the exact API surface. Adapt `AgentRuntime` accordingly.
+1. **Prompt via stdin**: Using `-p -` reads the prompt from stdin. This avoids shell escaping issues with complex prompts.
 
-2. The `extractOutput`, `extractCost`, and `extractSessionId` methods are intentionally defensive. The SDK response shape should be verified against actual SDK docs.
+2. **Session warm resume**: `--resume <session-id>` continues a prior session. `AgentRuntime` caches session IDs per agent. Call `endSession()` to clear the cache when the user closes a session.
 
-3. Do not mock the SDK in unit tests for the runtime — instead, mock the `query` function itself. Write integration tests separately in a `__tests__/integration/` folder that can be skipped in CI.
+3. **Working directory**: Always pass the project root as `cwd` so the subprocess has correct file and Git context.
+
+4. **Cost display**: `costUsd` from `stream-json` reflects quota consumption on a flat-rate subscription — surface it as "usage estimate" in the UI, not as an actual charge.
+
+5. **Auth errors**: If stderr contains "not logged in", surface: *"Please run `claude login` in your terminal."* Never fall back to API key auth.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `SystemPromptBuilder` correctly stacks all context layers
-- [ ] `AgentRuntime` wraps all SDK calls in try/catch returning `Result<T>`
-- [ ] `AgentRuntime` tracks session IDs for warm resume
-- [ ] `AgentRuntime` calls `memory.compact()` at session end
-- [ ] Status updates fire correctly on state changes
+- [ ] `ClaudeCliRunner` uses `child_process.spawn` (not `exec`)
+- [ ] Zero `@anthropic-ai/claude-agent-sdk` or `@anthropic-ai/sdk` imports
+- [ ] Zero `ANTHROPIC_API_KEY` references in source
+- [ ] `AgentRuntime.checkPrerequisites()` detects missing CLI correctly
+- [ ] `ClaudeCliRunner` emits real-time `text` events for streaming
+- [ ] Session IDs cached and passed via `--resume`
+- [ ] ENOENT triggers helpful install/login message
+- [ ] Auth errors trigger helpful login message
+- [ ] All unit tests pass with mocked `child_process`
 - [ ] No `vscode` imports
-- [ ] Unit tests pass
+- [ ] `npm run typecheck` passes
 
 ---
 
@@ -425,13 +711,14 @@ describe('SystemPromptBuilder', () => {
 ```bash
 cd packages/core && npm test && npm run typecheck
 grep -r "from 'vscode'" packages/core && echo "VIOLATION" || echo "OK"
+grep -rn "ANTHROPIC_API_KEY\|claude-agent-sdk\|@anthropic-ai/sdk" packages/core/src && echo "VIOLATION" || echo "OK"
 cd ../.. && npm run lint
 git diff main...HEAD
 
 git checkout main
-git merge phase/3.1-agent-runtime --no-ff -m "merge: complete phase 3.1 — agent runtime"
+git merge phase/3.1-agent-runtime --no-ff -m "merge: complete phase 3.1 — agent runtime (CLI subprocess)"
 git push origin main
-git tag -a "phase-3.1-complete" -m "Phase 3.1 complete: agent runtime"
+git tag -a "phase-3.1-complete" -m "Phase 3.1 complete: agent runtime via claude CLI"
 git push origin --tags
 ```
 

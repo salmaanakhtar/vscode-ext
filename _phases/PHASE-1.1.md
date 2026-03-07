@@ -26,10 +26,10 @@ Run this after the initial commit:
 
 ```bash
 # Create the repo if it does not exist
-gh repo view vscode-ext 2>/dev/null || gh repo create vscode-ext --private --source=. --push
+gh repo view [projectname] 2>/dev/null || gh repo create [projectname] --private --source=. --push
 
 # If repo already exists, just add remote and push
-git remote add origin https://github.com/[your-username]/vscode-ext.git
+git remote add origin https://github.com/[your-username]/[projectname].git
 git push -u origin phase/1.1-monorepo-scaffold
 ```
 
@@ -41,7 +41,7 @@ git push -u origin phase/1.1-monorepo-scaffold
 
 ```json
 {
-  "name": "vscode-ext",
+  "name": "[projectname]",
   "private": true,
   "workspaces": ["packages/*"],
   "scripts": {
@@ -141,7 +141,7 @@ packages/shared/
 `packages/shared/package.json`:
 ```json
 {
-  "name": "@vscode-ext/shared",
+  "name": "@[projectname]/shared",
   "version": "0.1.0",
   "private": true,
   "main": "dist/index.js",
@@ -196,7 +196,7 @@ packages/core/
 `packages/core/package.json`:
 ```json
 {
-  "name": "@vscode-ext/core",
+  "name": "@[projectname]/core",
   "version": "0.1.0",
   "private": true,
   "main": "dist/index.js",
@@ -209,10 +209,9 @@ packages/core/
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@vscode-ext/shared": "*"
+    "@[projectname]/shared": "*"
   },
   "devDependencies": {
-    "@anthropic-ai/claude-code": "latest",
     "better-sqlite3": "^9.0.0",
     "chokidar": "^3.6.0",
     "simple-git": "^3.22.0"
@@ -228,7 +227,7 @@ packages/core/
     "outDir": "dist",
     "rootDir": "src",
     "paths": {
-      "@vscode-ext/shared": ["../shared/src"]
+      "@[projectname]/shared": ["../shared/src"]
     }
   },
   "include": ["src"]
@@ -258,19 +257,19 @@ packages/extension/
 import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext): void {
-  console.log('vscode-ext extension activated');
+  console.log('[ProjectName] extension activated');
 }
 
 export function deactivate(): void {
-  console.log('vscode-ext extension deactivated');
+  console.log('[ProjectName] extension deactivated');
 }
 ```
 
 `packages/extension/package.json`:
 ```json
 {
-  "name": "vscode-ext",
-  "displayName": "vscode-ext",
+  "name": "[projectname]",
+  "displayName": "[ProjectName]",
   "description": "Persistent AI agent teams for your VS Code projects",
   "version": "0.1.0",
   "private": true,
@@ -285,8 +284,8 @@ export function deactivate(): void {
     "package": "vsce package"
   },
   "dependencies": {
-    "@vscode-ext/core": "*",
-    "@vscode-ext/shared": "*"
+    "@[projectname]/core": "*",
+    "@[projectname]/shared": "*"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",
@@ -295,8 +294,8 @@ export function deactivate(): void {
   },
   "contributes": {
     "viewsContainers": {
-      "activitybar": [{ "id": "projectname-sidebar", "title": "vscode-ext", "icon": "resources/icon.svg" }],
-      "panel": [{ "id": "projectname-panel", "title": "vscode-ext Approvals" }]
+      "activitybar": [{ "id": "projectname-sidebar", "title": "[ProjectName]", "icon": "resources/icon.svg" }],
+      "panel": [{ "id": "projectname-panel", "title": "[ProjectName] Approvals" }]
     },
     "views": {
       "projectname-sidebar": [
@@ -308,13 +307,13 @@ export function deactivate(): void {
       ]
     },
     "commands": [
-      { "command": "projectname.initTeam", "title": "vscode-ext: Initialise Agent Team" },
-      { "command": "projectname.addAgent", "title": "vscode-ext: Add Agent" },
-      { "command": "projectname.startTeamLead", "title": "vscode-ext: Start Team Lead" },
-      { "command": "projectname.openApprovalQueue", "title": "vscode-ext: Open Approval Queue" },
-      { "command": "projectname.exportAgent", "title": "vscode-ext: Export Agent" },
-      { "command": "projectname.importAgent", "title": "vscode-ext: Import Agent" },
-      { "command": "projectname.viewProgress", "title": "vscode-ext: View Agent Progress" }
+      { "command": "projectname.initTeam", "title": "[ProjectName]: Initialise Agent Team" },
+      { "command": "projectname.addAgent", "title": "[ProjectName]: Add Agent" },
+      { "command": "projectname.startTeamLead", "title": "[ProjectName]: Start Team Lead" },
+      { "command": "projectname.openApprovalQueue", "title": "[ProjectName]: Open Approval Queue" },
+      { "command": "projectname.exportAgent", "title": "[ProjectName]: Export Agent" },
+      { "command": "projectname.importAgent", "title": "[ProjectName]: Import Agent" },
+      { "command": "projectname.viewProgress", "title": "[ProjectName]: View Agent Progress" }
     ]
   }
 }
@@ -329,8 +328,8 @@ export function deactivate(): void {
     "rootDir": "src",
     "lib": ["ES2022"],
     "paths": {
-      "@vscode-ext/shared": ["../shared/src"],
-      "@vscode-ext/core": ["../core/src"]
+      "@[projectname]/shared": ["../shared/src"],
+      "@[projectname]/core": ["../core/src"]
     }
   },
   "include": ["src"]

@@ -88,7 +88,7 @@ export interface Agent {
   role: string;
   model: AgentModel;
   template?: string;
-  maxBudgetUsd: number;
+  maxTurns: number; // max CLI turns per task (replaces maxBudgetUsd — no per-call billing in subscription mode)
   sessionId?: string;
   git: GitPermissions;
   approvalRequired: RiskAction[];
@@ -98,7 +98,7 @@ export interface Agent {
 
 export interface TeamLeadConfig {
   model: AgentModel;
-  maxBudgetUsd: number;
+  maxTurns: number; // max CLI turns per task (replaces maxBudgetUsd — no per-call billing in subscription mode)
   sessionId?: string;
 }
 
@@ -301,7 +301,7 @@ export const RISK_LEVEL_MAP: Record<string, import('../types').RiskLevel> = {
 
 export const DEFAULT_TEAM_LEAD_CONFIG = {
   model: 'claude-sonnet-4-6' as const,
-  maxBudgetUsd: 2.00,
+  maxTurns: 30,
 };
 
 export const DEFAULT_GIT_CONFIG = {
@@ -544,7 +544,7 @@ export function validateAgent(agent: unknown): ValidationError[] {
   if (!a.id) errors.push({ field: 'id', message: 'Required' });
   if (!a.name) errors.push({ field: 'name', message: 'Required' });
   if (!a.model) errors.push({ field: 'model', message: 'Required' });
-  if (typeof a.maxBudgetUsd !== 'number') errors.push({ field: 'maxBudgetUsd', message: 'Must be number' });
+  if (typeof a.maxTurns !== 'number') errors.push({ field: 'maxTurns', message: 'Must be number' });
   if (!a.git) errors.push({ field: 'git', message: 'Required' });
   if (!Array.isArray(a.builtinTools)) errors.push({ field: 'builtinTools', message: 'Must be array' });
 
@@ -617,7 +617,7 @@ describe('validateTeamConfig', () => {
     const config = {
       version: '1.0',
       project: 'test',
-      teamLead: { model: 'claude-sonnet-4-6', maxBudgetUsd: 1 },
+      teamLead: { model: 'claude-sonnet-4-6', maxTurns: 30 },
       agents: [],
       memory: { backend: 'files', path: '.agent/memory' },
       git: { defaultBranch: 'main', agentBranchPrefix: 'agent', requireReviewBeforeMerge: true }
@@ -636,7 +636,7 @@ describe('validateAgent', () => {
       id: 'frontend',
       name: 'Frontend Agent',
       model: 'claude-sonnet-4-6',
-      maxBudgetUsd: 1.0,
+      maxTurns: 20,
       git: { canBranch: true, canCommit: true, canPush: false, canCreatePR: false, canMerge: false },
       approvalRequired: ['deleteFile'],
       builtinTools: ['Read', 'Write']

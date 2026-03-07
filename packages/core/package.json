@@ -15,7 +15,6 @@
     "@vscode-ext/shared": "*"
   },
   "devDependencies": {
-    "@anthropic-ai/claude-code": "latest",
     "better-sqlite3": "^9.0.0",
     "chokidar": "^3.6.0",
     "simple-git": "^3.22.0"
