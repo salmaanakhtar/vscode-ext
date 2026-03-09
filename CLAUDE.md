@@ -57,10 +57,14 @@ These rules must never be violated under any circumstances. If you believe a rul
 │   ├── shared/                      # Shared types, interfaces, constants
 │   │   ├── package.json
 │   │   ├── tsconfig.json
+│   │   ├── vitest.config.ts
 │   │   └── src/
-│   │       ├── types/
-│   │       ├── constants/
-│   │       └── index.ts
+│   │       ├── types/               # All canonical types (index.ts)
+│   │       ├── interfaces/          # MemoryAdapter.ts
+│   │       ├── constants/           # index.ts
+│   │       ├── utils/               # paths.ts, id.ts, logger.ts, validation.ts
+│   │       ├── __tests__/           # Unit tests
+│   │       └── index.ts             # Re-exports everything
 │   ├── core/                        # Standalone agent engine (NO vscode deps)
 │   │   ├── package.json
 │   │   ├── tsconfig.json
@@ -121,18 +125,33 @@ This directory is created inside a **user's project** at runtime. It is not part
 
 ## Canonical TypeScript Types
 
-These live in `packages/shared/src/types/`. Import from `@projectname/shared` everywhere else. Never redefine these types in other packages.
+These live in `packages/shared/src/types/`. Import from `@vscode-ext/shared` everywhere else. Never redefine these types in other packages.
+
+> **These are the implemented types as of Phase 1.2.** The source of truth is `packages/shared/src/types/index.ts`.
 
 ```typescript
-type ModelId = 'claude-opus-4-6' | 'claude-sonnet-4-6' | 'claude-haiku-4-5-20251001';
+// --- Primitive types ---
 
-type ActionType =
-  | 'createFile' | 'deleteFile' | 'modifyFile'
-  | 'runScript' | 'installPackage'
-  | 'gitBranch' | 'gitCommit' | 'gitPush' | 'gitCreatePR' | 'gitMerge'
-  | 'readEnv' | 'networkRequest';
+type AgentModel = 'claude-opus-4-6' | 'claude-sonnet-4-6' | 'claude-haiku-4-5-20251001';
+
+type RiskAction =
+  | 'deleteFile' | 'push' | 'runScript' | 'modifyConfig'
+  | 'installPackage' | 'createFile' | 'forcePush' | 'modifyCI';
 
 type RiskLevel = 'auto' | 'low' | 'medium' | 'high';
+
+type TaskStatus = 'pending' | 'running' | 'awaiting_approval' | 'complete' | 'failed';
+
+type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'modified';
+
+type MemoryEntryType = 'decision' | 'context' | 'task_summary' | 'preference' | 'fact';
+
+type MemoryBackend = 'files' | 'sqlite' | 'custom';
+
+// Result type — used throughout core
+type Result<T, E = Error> = { success: true; data: T } | { success: false; error: E };
+
+// --- Interfaces ---
 
 interface GitPermissions {
   canBranch: boolean;
@@ -142,95 +161,133 @@ interface GitPermissions {
   canMerge: boolean;
 }
 
+interface MCPServerConfig {
+  name: string;
+  url: string;
+  allowedTools: string[];
+}
+
 interface Agent {
   id: string;
   name: string;
   role: string;
-  model: ModelId;
+  model: AgentModel;
   template?: string;
   maxTurns: number;          // max CLI turns per task (subscription mode — no per-call USD billing)
+  sessionId?: string;
   git: GitPermissions;
-  approvalRequired: ActionType[];
-  isTeamLead: boolean;
+  approvalRequired: RiskAction[];
+  mcpServers?: MCPServerConfig[];
+  builtinTools: string[];
 }
 
-interface Task {
-  id: string;
-  assignedTo: string;
-  assignedBy: string;
-  prompt: string;
-  status: 'pending' | 'active' | 'waiting-approval' | 'complete' | 'failed';
-  createdAt: string;
-  completedAt?: string;
-  result?: string;
-  cost?: number;
-}
-
-interface ApprovalRequest {
-  id: string;
-  agentId: string;
-  agentName: string;
-  action: ActionType;
-  riskLevel: RiskLevel;
-  description: string;
-  parameters: Record<string, unknown>;
-  reasoning: string;
-  requestedAt: string;
-  status: 'pending' | 'approved' | 'rejected' | 'modified';
-  resolution?: ApprovalResolution;
-}
-
-interface ApprovalResolution {
-  decision: 'approved' | 'rejected' | 'modified';
-  modifiedParameters?: Record<string, unknown>;
-  feedback?: string;
-  resolvedAt: string;
-}
-
-interface AgentMessage {
-  id: string;
-  from: string;
-  to: string;
-  re?: string;
-  subject: string;
-  body: string;
-  sentAt: string;
-  read: boolean;
-}
-
-interface MemoryEntry {
-  id: string;
-  agentId: string;
-  key: string;
-  value: string;
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface MemoryAdapter {
-  read(agentId: string, key: string): Promise<MemoryEntry | null>;
-  write(entry: Omit<MemoryEntry, 'id' | 'createdAt' | 'updatedAt'>): Promise<MemoryEntry>;
-  search(agentId: string, query: string): Promise<MemoryEntry[]>;
-  list(agentId: string, tags?: string[]): Promise<MemoryEntry[]>;
-  delete(agentId: string, key: string): Promise<boolean>;
-  close(): Promise<void>;
+interface TeamLeadConfig {
+  model: AgentModel;
+  maxTurns: number;
+  sessionId?: string;
 }
 
 interface MemoryConfig {
-  backend: 'files' | 'sqlite' | 'custom';
+  backend: MemoryBackend;
   path: string;
   customAdapterPath?: string;
+}
+
+interface GlobalGitConfig {
+  defaultBranch: string;
+  agentBranchPrefix: string;
+  requireReviewBeforeMerge: boolean;
 }
 
 interface TeamConfig {
   version: string;
   project: string;
-  teamLead: Agent;
+  teamLead: TeamLeadConfig;
   agents: Agent[];
   memory: MemoryConfig;
+  git: GlobalGitConfig;
+}
+
+interface Task {
+  id: string;
+  agentId: string;
+  prompt: string;
+  status: TaskStatus;
+  createdAt: string;
+  completedAt?: string;
+  result?: string;
+  cost?: number;
+  error?: string;
+}
+
+interface ApprovalResolution {
+  decision: 'approved' | 'rejected' | 'modified';
+  modifiedParams?: Record<string, unknown>;
+  feedback?: string;
+  resolvedAt: string;
+}
+
+interface ApprovalRequest {
+  id: string;
+  agentId: string;
+  taskId: string;
+  action: RiskAction;
+  riskLevel: RiskLevel;
+  description: string;
+  context: string;
+  requestedAt: string;
+  status: ApprovalStatus;
+  resolution?: ApprovalResolution;
+}
+
+interface MemoryEntry {
+  id: string;
+  agentId: string | 'project';
+  type: MemoryEntryType;
+  content: string;
+  tags: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+interface AgentMessage {
+  id: string;
+  fromAgentId: string;
+  toAgentId: string | 'all';
+  taskId?: string;
+  subject: string;
+  body: string;
+  sentAt: string;
+  readAt?: string;
+}
+
+interface AgentStatus {
+  agentId: string;
+  state: 'idle' | 'thinking' | 'writing' | 'awaiting_approval' | 'error' | 'offline';
+  currentTaskId?: string;
+  lastActivityAt: string;
+  sessionActive: boolean;
+  tokensUsed: number;
+  costUsd: number;
+}
+
+interface ProjectInfo {
+  name: string;
+  description: string;
+  techStack: string[];
+  rootPath: string;
+  agentDirPath: string;
+}
+
+// MemoryAdapter lives in packages/shared/src/interfaces/MemoryAdapter.ts
+interface MemoryAdapter {
+  init(config: MemoryConfig): Promise<void>;
+  write(entry: MemoryEntry): Promise<void>;
+  read(id: string): Promise<MemoryEntry | null>;
+  list(filter?: { agentId?: string; type?: MemoryEntryType; tags?: string[]; limit?: number; since?: string }): Promise<MemoryEntry[]>;
+  search(query: string, agentId?: string): Promise<MemoryEntry[]>;
+  delete(id: string): Promise<void>;
+  compact(agentId: string): Promise<void>;
 }
 ```
 
@@ -315,9 +372,9 @@ Examples:
 ### Pre-Push Checklist (run every time before pushing)
 
 ```bash
-npm run lint          # Zero errors required
+npm run typecheck     # Zero errors required
+npm run lint          # Zero errors required (warnings OK)
 npm run test          # All tests must pass
-npm run build         # Zero build errors required
 ```
 
 Only push after all three pass. Fix failures before pushing — never push broken code.
