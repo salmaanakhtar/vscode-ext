@@ -1,8 +1,13 @@
 import { defineConfig } from 'vitest/config';
+import path from 'path';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@vscode-ext/shared': path.resolve(__dirname, '../shared/src'),
+    },
+  },
   test: {
-    passWithNoTests: true,
     include: ['src/__tests__/**/*.test.ts'],
     coverage: {
       provider: 'v8',
