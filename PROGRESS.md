@@ -1,35 +1,37 @@
 # vscode-ext — Development Progress
 
 ## Last Updated
-2026-03-10T02:01:00Z
+2026-03-10T19:05:00Z
 
 ## Current Phase
-Phase 1 — Foundation | Sub-phase 1.2 — Shared Types (COMPLETE)
+Phase 2 — Agent Runtime | Sub-phase 2.1 — Memory Adapters (COMPLETE)
 
 ## Completed Sub-Phases
 - [x] 1.1 — Monorepo scaffold
 - [x] 1.2 — Shared types, interfaces, utils, and tests
+- [x] 2.1 — Memory Adapters (FileAdapter, SQLiteAdapter, MemoryManager)
 
 ## Current Branch
-main (phase/1.2-shared-types merged and deleted)
+main (phase/2.1-memory-adapters merged and deleted)
 
 ## What Was Just Built
-All canonical TypeScript types and interfaces in `packages/shared/src/types/index.ts` (Agent, Task, ApprovalRequest, MemoryEntry, TeamConfig, etc.), `MemoryAdapter` interface in `packages/shared/src/interfaces/`, constants in `packages/shared/src/constants/`, and four utility modules (paths, id, logger, validation). 23 vitest unit tests across 3 test files, all passing. `packages/core/vitest.config.ts` added with `passWithNoTests: true` so the root test runner doesn't fail before core has tests.
+`FileAdapter` (file-based memory using JSON files), `SQLiteAdapter` (SQLite with FTS5 full-text search), and `MemoryManager` (Result<T>-wrapped facade with `getAgentContext`/`getProjectContext` helpers). 30 unit tests across two test files, all passing. Both adapters fully implement the `MemoryAdapter` interface from `@vscode-ext/shared`.
 
 ## Decisions Made This Session
-- `getAgentDir2` renamed to `getAgentWorkDir` to avoid the awkward numbered suffix.
-- `packages/core/vitest.config.ts` added with `passWithNoTests: true` — will be updated when core tests are written in Phase 2.
-- Phase 1.2 types are a superset of the CLAUDE.md canonical types (PHASE-1.2.md is the authoritative source for this phase).
+- Removed `rootDir: "src"` from `packages/core/tsconfig.json` — the `paths` alias resolves `@vscode-ext/shared` to `../shared/src` which is outside `src/`, causing TS6059. Without `rootDir`, TypeScript infers the common ancestor. Build step can use a separate `tsconfig.build.json` if needed later.
+- Added `resolve.alias` to `packages/core/vitest.config.ts` — Vitest (Vite) doesn't read TypeScript `paths`, so the alias must be declared explicitly for tests to resolve `@vscode-ext/shared`.
+- `SQLiteAdapter` uses `any` for the `db` field and `BetterSqlite3` constructor — `better-sqlite3` v9 bundled types aren't resolved via npm workspace hoisting; dynamic `require()` with `any` avoids the hard type dependency, which is appropriate since SQLiteAdapter is an optional backend.
 
 ## Known Issues / TODOs
 - Node.js v18 engine warnings from transitive deps — not a blocker.
 - `console.log` in extension.ts stub produces ESLint warnings — expected, intentional for stub.
+- `packages/core/tsconfig.json` has no `rootDir` — acceptable for now, but a `tsconfig.build.json` with proper project references should be added when the build step is implemented.
 
 ## What The Next Session Should Do First
 1. Read CLAUDE.md and this PROGRESS.md in full.
-2. Load `_phases/PHASE-2.1.md`.
-3. Create branch: `git checkout main && git pull origin main && git checkout -b phase/2.1-memory-adapters`
-4. Implement `FileMemoryAdapter` in `packages/core/src/memory/`.
+2. Load `_phases/PHASE-2.2.md`.
+3. Create branch: `git checkout main && git pull origin main && git checkout -b phase/2.2-team-registry`
+4. Implement `TeamRegistry` in `packages/core/src/registry/`.
 5. Write unit tests with >80% coverage.
 6. Run `npm run typecheck && npm run lint && npm run test` — all must pass before pushing.
 
@@ -69,7 +71,15 @@ vsdcode-ext/
 │   │   ├── vitest.config.ts
 │   │   └── src/
 │   │       ├── index.ts
-│   │       ├── memory/.gitkeep
+│   │       ├── memory/
+│   │       │   ├── FileAdapter.ts
+│   │       │   ├── SQLiteAdapter.ts
+│   │       │   ├── MemoryManager.ts
+│   │       │   └── index.ts
+│   │       ├── __tests__/
+│   │       │   └── memory/
+│   │       │       ├── FileAdapter.test.ts
+│   │       │       └── MemoryManager.test.ts
 │   │       ├── registry/.gitkeep
 │   │       ├── runtime/.gitkeep
 │   │       ├── messaging/.gitkeep
