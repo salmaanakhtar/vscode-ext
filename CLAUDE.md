@@ -537,6 +537,46 @@ Start each phase by reading CLAUDE.md, then PROGRESS.md, then the relevant PHASE
 
 ---
 
+## Build & Test Configuration Notes
+
+These patterns were discovered during implementation and must be followed in all future phases.
+
+### TypeScript `rootDir` in `packages/core`
+
+`packages/core/tsconfig.json` does **not** set `rootDir`. Reason: the `paths` alias maps `@vscode-ext/shared` to `../shared/src`, which pulls shared source files into core's compilation. Setting `rootDir: "src"` causes **TS6059** because those files are outside `src/`. Without `rootDir`, TypeScript infers the common ancestor automatically. The `--noEmit` typecheck is unaffected; if a build step is added later, use a separate `tsconfig.build.json` with project references.
+
+### Vitest `resolve.alias` for `@vscode-ext/shared`
+
+Any `vitest.config.ts` in a package that imports from `@vscode-ext/shared` **must** declare a `resolve.alias` entry, because Vitest (Vite) does not read TypeScript `paths`. Example — `packages/core/vitest.config.ts`:
+
+```typescript
+import path from 'path';
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      '@vscode-ext/shared': path.resolve(__dirname, '../shared/src'),
+    },
+  },
+  // ...
+});
+```
+
+Apply the same pattern to `packages/extension/vitest.config.ts` when tests are added there.
+
+### ESLint disable for dynamic `require()`
+
+When suppressing `require()` usage inside source code, use the correct rule name:
+
+```typescript
+// eslint-disable-next-line @typescript-eslint/no-var-requires   ← for const x = require(...)
+// eslint-disable-next-line @typescript-eslint/no-require-imports ← wrong name, does not suppress
+```
+
+The `@typescript-eslint/recommended` preset (v6) enables `@typescript-eslint/no-var-requires`, not `no-require-imports`. Always use `no-var-requires` for disable comments on `const x = require(...)` declarations.
+
+---
+
 ## Definition of Done
 
 A sub-phase is complete when:
