@@ -1,0 +1,1 @@
+export { TeamRegistry } from './TeamRegistry';
