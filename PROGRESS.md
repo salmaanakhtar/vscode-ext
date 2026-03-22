@@ -1,37 +1,37 @@
 # vscode-ext — Development Progress
 
 ## Last Updated
-2026-03-10T19:05:00Z
+2026-03-22T09:36:00Z
 
 ## Current Phase
-Phase 2 — Agent Runtime | Sub-phase 2.1 — Memory Adapters (COMPLETE)
+Phase 2 — Agent Runtime | Sub-phase 2.2 — TeamRegistry (COMPLETE)
 
 ## Completed Sub-Phases
 - [x] 1.1 — Monorepo scaffold
 - [x] 1.2 — Shared types, interfaces, utils, and tests
 - [x] 2.1 — Memory Adapters (FileAdapter, SQLiteAdapter, MemoryManager)
+- [x] 2.2 — TeamRegistry
 
 ## Current Branch
-main (phase/2.1-memory-adapters merged and deleted)
+main (phase/2.2-team-registry merged and deleted)
 
 ## What Was Just Built
-`FileAdapter` (file-based memory using JSON files), `SQLiteAdapter` (SQLite with FTS5 full-text search), and `MemoryManager` (Result<T>-wrapped facade with `getAgentContext`/`getProjectContext` helpers). 30 unit tests across two test files, all passing. Both adapters fully implement the `MemoryAdapter` interface from `@vscode-ext/shared`.
+`TeamRegistry` in `packages/core/src/registry/`. Manages the full `.agent/` directory lifecycle: `initProject` creates all dirs and seed files, `load`/`save` round-trip `team.json` with validation, `registerAgent` creates agent dirs/CLAUDE.md/tools.json/inbox and appends to config, `removeAgent` and `updateAgent` mutate and persist, plus file-reader helpers. 32 unit tests across all happy paths and error cases, all passing.
 
 ## Decisions Made This Session
-- Removed `rootDir: "src"` from `packages/core/tsconfig.json` — the `paths` alias resolves `@vscode-ext/shared` to `../shared/src` which is outside `src/`, causing TS6059. Without `rootDir`, TypeScript infers the common ancestor. Build step can use a separate `tsconfig.build.json` if needed later.
-- Added `resolve.alias` to `packages/core/vitest.config.ts` — Vitest (Vite) doesn't read TypeScript `paths`, so the alias must be declared explicitly for tests to resolve `@vscode-ext/shared`.
-- `SQLiteAdapter` uses `any` for the `db` field and `BetterSqlite3` constructor — `better-sqlite3` v9 bundled types aren't resolved via npm workspace hoisting; dynamic `require()` with `any` avoids the hard type dependency, which is appropriate since SQLiteAdapter is an optional backend.
+- Used `getAgentWorkDir` (the actual export name) instead of the spec's `getAgentDir2` — the spec had a stale import name that didn't match the implemented paths utility.
+- Test `makeAgent` fixture uses `maxTurns: 20` not `maxBudgetUsd` — spec had an outdated field name from before the subscription-mode refactor.
 
 ## Known Issues / TODOs
 - Node.js v18 engine warnings from transitive deps — not a blocker.
 - `console.log` in extension.ts stub produces ESLint warnings — expected, intentional for stub.
-- `packages/core/tsconfig.json` has no `rootDir` — acceptable for now, but a `tsconfig.build.json` with proper project references should be added when the build step is implemented.
+- `packages/core/tsconfig.json` has no `rootDir` — acceptable for now.
 
 ## What The Next Session Should Do First
 1. Read CLAUDE.md and this PROGRESS.md in full.
-2. Load `_phases/PHASE-2.2.md`.
-3. Create branch: `git checkout main && git pull origin main && git checkout -b phase/2.2-team-registry`
-4. Implement `TeamRegistry` in `packages/core/src/registry/`.
+2. Load `_phases/PHASE-3.1.md` (Agent Runtime).
+3. Create branch: `git checkout main && git checkout -b phase/3.1-agent-runtime`
+4. Implement `AgentRuntime` in `packages/core/src/runtime/`.
 5. Write unit tests with >80% coverage.
 6. Run `npm run typecheck && npm run lint && npm run test` — all must pass before pushing.
 
@@ -76,11 +76,15 @@ vsdcode-ext/
 │   │       │   ├── SQLiteAdapter.ts
 │   │       │   ├── MemoryManager.ts
 │   │       │   └── index.ts
+│   │       ├── registry/
+│   │       │   ├── TeamRegistry.ts
+│   │       │   └── index.ts
 │   │       ├── __tests__/
-│   │       │   └── memory/
-│   │       │       ├── FileAdapter.test.ts
-│   │       │       └── MemoryManager.test.ts
-│   │       ├── registry/.gitkeep
+│   │       │   ├── memory/
+│   │       │   │   ├── FileAdapter.test.ts
+│   │       │   │   └── MemoryManager.test.ts
+│   │       │   └── registry/
+│   │       │       └── TeamRegistry.test.ts
 │   │       ├── runtime/.gitkeep
 │   │       ├── messaging/.gitkeep
 │   │       ├── approval/.gitkeep
