@@ -261,6 +261,11 @@ export class TeamRegistry {
     } catch { return ''; }
   }
 
+  /** Return the project root path. */
+  getProjectRoot(): string {
+    return this.projectRoot;
+  }
+
   /** Returns true if team.json exists on disk. */
   async isInitialised(): Promise<boolean> {
     try {

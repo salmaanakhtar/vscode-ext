@@ -14,6 +14,9 @@
   "dependencies": {
     "@vscode-ext/shared": "*"
   },
+  "peerDependencies": {
+    "@anthropic-ai/claude-code": ">=1.0.0"
+  },
   "devDependencies": {
     "better-sqlite3": "^9.0.0",
     "chokidar": "^3.6.0",
