@@ -1,26 +1,28 @@
 # vscode-ext — Development Progress
 
 ## Last Updated
-2026-03-22T09:36:00Z
+2026-03-27T21:15:00Z
 
 ## Current Phase
-Phase 2 — Agent Runtime | Sub-phase 2.2 — TeamRegistry (COMPLETE)
+Phase 3 — Orchestration & Approval | Sub-phase 3.1 — Agent Runtime (COMPLETE)
 
 ## Completed Sub-Phases
 - [x] 1.1 — Monorepo scaffold
 - [x] 1.2 — Shared types, interfaces, utils, and tests
 - [x] 2.1 — Memory Adapters (FileAdapter, SQLiteAdapter, MemoryManager)
 - [x] 2.2 — TeamRegistry
+- [x] 3.1 — Agent Runtime (Claude Code CLI subprocess integration)
 
 ## Current Branch
-main (phase/2.2-team-registry merged and deleted)
+main (phase/3.1-agent-runtime merged and deleted)
 
 ## What Was Just Built
-`TeamRegistry` in `packages/core/src/registry/`. Manages the full `.agent/` directory lifecycle: `initProject` creates all dirs and seed files, `load`/`save` round-trip `team.json` with validation, `registerAgent` creates agent dirs/CLAUDE.md/tools.json/inbox and appends to config, `removeAgent` and `updateAgent` mutate and persist, plus file-reader helpers. 32 unit tests across all happy paths and error cases, all passing.
+`AgentRuntime` in `packages/core/src/runtime/`. Wraps the local `claude` CLI via `child_process.spawn` (no API key, no SDK — runs on user's Pro/Max subscription). Four modules: `checkClaude.ts` (prerequisite check), `ClaudeCliRunner.ts` (low-level subprocess wrapper with streaming EventEmitter), `SystemPromptBuilder.ts` (assembles system prompt from registry files + memory), `AgentRuntime.ts` (orchestrates task execution, session caching, status tracking, abort support). 36 new unit tests, all passing (121 total).
 
 ## Decisions Made This Session
-- Used `getAgentWorkDir` (the actual export name) instead of the spec's `getAgentDir2` — the spec had a stale import name that didn't match the implemented paths utility.
-- Test `makeAgent` fixture uses `maxTurns: 20` not `maxBudgetUsd` — spec had an outdated field name from before the subscription-mode refactor.
+- Spec's `getTeamLeadAsAgent()` used stale `maxBudgetUsd` field — corrected to `maxTurns` matching actual `Agent` type.
+- Spec's ENOENT test emitted `close` before `error` (race condition) — fixed with a dedicated `makeErrorProc` helper that fires `error` first then `close`, matching real Node.js behaviour.
+- Added `getProjectRoot()` to `TeamRegistry` (referenced by `AgentRuntime` but missing from the spec's registry implementation).
 
 ## Known Issues / TODOs
 - Node.js v18 engine warnings from transitive deps — not a blocker.
@@ -29,9 +31,9 @@ main (phase/2.2-team-registry merged and deleted)
 
 ## What The Next Session Should Do First
 1. Read CLAUDE.md and this PROGRESS.md in full.
-2. Load `_phases/PHASE-3.1.md` (Agent Runtime).
-3. Create branch: `git checkout main && git checkout -b phase/3.1-agent-runtime`
-4. Implement `AgentRuntime` in `packages/core/src/runtime/`.
+2. Load `_phases/PHASE-3.2.md` (MessageBus & ApprovalGate).
+3. Create branch: `git checkout main && git checkout -b phase/3.2-message-bus`
+4. Implement `MessageBus` in `packages/core/src/messaging/` and `ApprovalGate` in `packages/core/src/approval/`.
 5. Write unit tests with >80% coverage.
 6. Run `npm run typecheck && npm run lint && npm run test` — all must pass before pushing.
 
@@ -79,13 +81,23 @@ vsdcode-ext/
 │   │       ├── registry/
 │   │       │   ├── TeamRegistry.ts
 │   │       │   └── index.ts
+│   │       ├── runtime/
+│   │       │   ├── checkClaude.ts
+│   │       │   ├── ClaudeCliRunner.ts
+│   │       │   ├── SystemPromptBuilder.ts
+│   │       │   ├── AgentRuntime.ts
+│   │       │   └── index.ts
 │   │       ├── __tests__/
 │   │       │   ├── memory/
 │   │       │   │   ├── FileAdapter.test.ts
 │   │       │   │   └── MemoryManager.test.ts
-│   │       │   └── registry/
-│   │       │       └── TeamRegistry.test.ts
-│   │       ├── runtime/.gitkeep
+│   │       │   ├── registry/
+│   │       │   │   └── TeamRegistry.test.ts
+│   │       │   └── runtime/
+│   │       │       ├── checkClaude.test.ts
+│   │       │       ├── ClaudeCliRunner.test.ts
+│   │       │       ├── SystemPromptBuilder.test.ts
+│   │       │       └── AgentRuntime.test.ts
 │   │       ├── messaging/.gitkeep
 │   │       ├── approval/.gitkeep
 │   │       ├── orchestrator/.gitkeep
