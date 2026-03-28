@@ -12,14 +12,14 @@
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@vscode-ext/shared": "*"
+    "@vscode-ext/shared": "*",
+    "simple-git": "^3.22.0"
   },
   "peerDependencies": {
     "@anthropic-ai/claude-code": ">=1.0.0"
   },
   "devDependencies": {
     "better-sqlite3": "^9.0.0",
-    "chokidar": "^3.6.0",
-    "simple-git": "^3.22.0"
+    "chokidar": "^3.6.0"
   }
 }

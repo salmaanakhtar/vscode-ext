@@ -4,3 +4,4 @@ export * from './runtime';
 export * from './messaging';
 export * from './approval';
 export * from './orchestrator';
+export * from './git';
