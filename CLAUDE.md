@@ -84,9 +84,8 @@ These rules must never be violated under any circumstances. If you believe a rul
 │       └── src/
 │           ├── extension.ts         # Entry point
 │           ├── panels/              # Webview panels
-│           ├── views/               # TreeView providers
+│           ├── providers/           # TreeView providers
 │           ├── commands/            # Command handlers
-│           ├── decorations/         # File decorator provider
 │           └── statusbar/           # Status bar item
 ```
 
@@ -574,6 +573,17 @@ When suppressing `require()` usage inside source code, use the correct rule name
 ```
 
 The `@typescript-eslint/recommended` preset (v6) enables `@typescript-eslint/no-var-requires`, not `no-require-imports`. Always use `no-var-requires` for disable comments on `const x = require(...)` declarations.
+
+### PHASE spec files may use non-canonical directory names
+
+The `_phases/PHASE-N.M.md` spec files are written ahead of implementation and may use directory names that differ from the canonical names in this file. **CLAUDE.md always takes precedence.** Known divergences:
+
+| Spec file said | Canonical (CLAUDE.md) |
+|---|---|
+| `bus/` | `messaging/` |
+| `gate/` | `approval/` |
+
+When a spec names a directory, verify it matches the canonical name here before creating files. If it differs, use the canonical name and note the divergence in PROGRESS.md.
 
 ---
 
