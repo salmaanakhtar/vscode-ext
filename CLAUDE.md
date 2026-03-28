@@ -76,7 +76,7 @@ These rules must never be violated under any circumstances. If you believe a rul
 │   │       ├── messaging/           # MessageBus
 │   │       ├── approval/            # ApprovalGate
 │   │       ├── orchestrator/        # Orchestrator, TaskQueue
-│   │       ├── git/                 # Git integration (Phase 4.2)
+│   │       ├── git/                 # GitManager — branch, commit, push, PR, merge
 │   │       ├── templates/           # Agent template library (Phase 7)
 │   │       ├── __tests__/           # Unit tests mirroring src structure
 │   │       └── index.ts
@@ -128,7 +128,7 @@ This directory is created inside a **user's project** at runtime. It is not part
 
 These live in `packages/shared/src/types/`. Import from `@vscode-ext/shared` everywhere else. Never redefine these types in other packages.
 
-> **These are the implemented types as of Phase 4.1.** The source of truth is `packages/shared/src/types/index.ts`.
+> **These are the implemented types as of Phase 4.2.** The source of truth is `packages/shared/src/types/index.ts`.
 
 ```typescript
 // --- Primitive types ---
@@ -260,6 +260,26 @@ interface AgentMessage {
   body: string;
   sentAt: string;
   readAt?: string;
+}
+
+interface AgentTemplate {
+  id: string;
+  name: string;
+  role: string;
+  description: string;
+  defaultModel: AgentModel;
+  defaultTools: string[];
+  defaultMcpServers?: MCPServerConfig[];
+  claudeMdTemplate: string;
+  defaultApprovalRequired: RiskAction[];
+  defaultGitPermissions: GitPermissions;
+}
+
+interface TeamPreset {
+  id: string;
+  name: string;
+  description: string;
+  agentTemplateIds: string[];
 }
 
 interface AgentStatus {
@@ -589,16 +609,31 @@ const [a, b] = spy.mock.calls[0] as [string, string];
 const [a, b] = spy.mock.calls[0] as unknown as [string, string];
 ```
 
-### PHASE spec files may use non-canonical directory names
+### PHASE spec files may use non-canonical names
 
-The `_phases/PHASE-N.M.md` spec files are written ahead of implementation and may use directory names that differ from the canonical names in this file. **CLAUDE.md always takes precedence.** Known divergences:
+The `_phases/PHASE-N.M.md` spec files are written ahead of implementation and may use names that differ from the canonical names in this file. **CLAUDE.md always takes precedence.** Known divergences:
 
 | Spec file said | Canonical (CLAUDE.md) |
 |---|---|
 | `bus/` | `messaging/` |
 | `gate/` | `approval/` |
+| `maxBudgetUsd` (Agent field) | `maxTurns` |
 
-When a spec names a directory, verify it matches the canonical name here before creating files. If it differs, use the canonical name and note the divergence in PROGRESS.md.
+When a spec names a directory or field, verify it matches the canonical name here before creating files. If it differs, use the canonical name and note the divergence in PROGRESS.md.
+
+### Windows-safe `execSync` in tests
+
+Never pass `shell: '/bin/bash'` to `execSync` in test files — `/bin/bash` does not exist on Windows and will throw `ENOENT`. Use cross-platform alternatives:
+
+```typescript
+// Wrong — fails on Windows
+execSync('git checkout main 2>/dev/null || git checkout -', { cwd, shell: '/bin/bash' });
+
+// Correct — use simple-git or a platform-neutral call
+const currentBranch = await gitManager.getCurrentBranch();
+```
+
+When a test needs to know the current branch, call `GitManager.getCurrentBranch()` rather than shelling out.
 
 ---
 
