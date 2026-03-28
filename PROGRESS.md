@@ -1,10 +1,10 @@
 # vscode-ext — Development Progress
 
 ## Last Updated
-2026-03-27T21:15:00Z
+2026-03-28T10:12:00Z
 
 ## Current Phase
-Phase 3 — Orchestration & Approval | Sub-phase 3.1 — Agent Runtime (COMPLETE)
+Phase 3 — Orchestration & Approval | Sub-phase 3.2 — MessageBus & ApprovalGate (COMPLETE)
 
 ## Completed Sub-Phases
 - [x] 1.1 — Monorepo scaffold
@@ -12,28 +12,28 @@ Phase 3 — Orchestration & Approval | Sub-phase 3.1 — Agent Runtime (COMPLETE
 - [x] 2.1 — Memory Adapters (FileAdapter, SQLiteAdapter, MemoryManager)
 - [x] 2.2 — TeamRegistry
 - [x] 3.1 — Agent Runtime (Claude Code CLI subprocess integration)
+- [x] 3.2 — MessageBus & ApprovalGate
 
 ## Current Branch
-main (phase/3.1-agent-runtime merged and deleted)
+main (phase/3.2-messagebus-approvalgate merged and deleted)
 
 ## What Was Just Built
-`AgentRuntime` in `packages/core/src/runtime/`. Wraps the local `claude` CLI via `child_process.spawn` (no API key, no SDK — runs on user's Pro/Max subscription). Four modules: `checkClaude.ts` (prerequisite check), `ClaudeCliRunner.ts` (low-level subprocess wrapper with streaming EventEmitter), `SystemPromptBuilder.ts` (assembles system prompt from registry files + memory), `AgentRuntime.ts` (orchestrates task execution, session caching, status tracking, abort support). 36 new unit tests, all passing (121 total).
+`MessageBus` in `packages/core/src/messaging/` and `ApprovalGate` in `packages/core/src/approval/`. MessageBus provides file-based agent-to-agent messaging via `.agent/inbox/*.md` files, watched via chokidar with `send`, `broadcast`, `readInbox`, `clearInbox`, and `onMessage` APIs. ApprovalGate classifies agent actions by risk level using `RISK_LEVEL_MAP`, routes non-auto actions through a pluggable `ApprovalHandler`, and writes an immutable audit trail to `.agent/memory/audit.md`. 18 new unit tests; 139 total (all passing).
 
 ## Decisions Made This Session
-- Spec's `getTeamLeadAsAgent()` used stale `maxBudgetUsd` field — corrected to `maxTurns` matching actual `Agent` type.
-- Spec's ENOENT test emitted `close` before `error` (race condition) — fixed with a dedicated `makeErrorProc` helper that fires `error` first then `close`, matching real Node.js behaviour.
-- Added `getProjectRoot()` to `TeamRegistry` (referenced by `AgentRuntime` but missing from the spec's registry implementation).
+- Used canonical directory names `messaging/` and `approval/` (per CLAUDE.md) rather than `bus/` and `gate/` named in the phase spec file.
+- `getRiskLevel` takes an `_agentId` param (prefixed unused) to allow per-agent overrides in a future phase without breaking the signature.
 
 ## Known Issues / TODOs
 - Node.js v18 engine warnings from transitive deps — not a blocker.
 - `console.log` in extension.ts stub produces ESLint warnings — expected, intentional for stub.
-- `packages/core/tsconfig.json` has no `rootDir` — acceptable for now.
+- chokidar file-change handler is not tested directly (requires live FS events); covered by integration tests in a later phase.
 
 ## What The Next Session Should Do First
 1. Read CLAUDE.md and this PROGRESS.md in full.
-2. Load `_phases/PHASE-3.2.md` (MessageBus & ApprovalGate).
-3. Create branch: `git checkout main && git checkout -b phase/3.2-message-bus`
-4. Implement `MessageBus` in `packages/core/src/messaging/` and `ApprovalGate` in `packages/core/src/approval/`.
+2. Load `_phases/PHASE-4.1.md` (Orchestrator).
+3. Create branch: `git checkout main && git checkout -b phase/4.1-orchestrator`
+4. Implement `Orchestrator` in `packages/core/src/orchestrator/`.
 5. Write unit tests with >80% coverage.
 6. Run `npm run typecheck && npm run lint && npm run test` — all must pass before pushing.
 
@@ -87,19 +87,27 @@ vsdcode-ext/
 │   │       │   ├── SystemPromptBuilder.ts
 │   │       │   ├── AgentRuntime.ts
 │   │       │   └── index.ts
+│   │       ├── messaging/
+│   │       │   ├── MessageBus.ts
+│   │       │   └── index.ts
+│   │       ├── approval/
+│   │       │   ├── ApprovalGate.ts
+│   │       │   └── index.ts
 │   │       ├── __tests__/
 │   │       │   ├── memory/
 │   │       │   │   ├── FileAdapter.test.ts
 │   │       │   │   └── MemoryManager.test.ts
 │   │       │   ├── registry/
 │   │       │   │   └── TeamRegistry.test.ts
-│   │       │   └── runtime/
-│   │       │       ├── checkClaude.test.ts
-│   │       │       ├── ClaudeCliRunner.test.ts
-│   │       │       ├── SystemPromptBuilder.test.ts
-│   │       │       └── AgentRuntime.test.ts
-│   │       ├── messaging/.gitkeep
-│   │       ├── approval/.gitkeep
+│   │       │   ├── runtime/
+│   │       │   │   ├── checkClaude.test.ts
+│   │       │   │   ├── ClaudeCliRunner.test.ts
+│   │       │   │   ├── SystemPromptBuilder.test.ts
+│   │       │   │   └── AgentRuntime.test.ts
+│   │       │   ├── messaging/
+│   │       │   │   └── MessageBus.test.ts
+│   │       │   └── approval/
+│   │       │       └── ApprovalGate.test.ts
 │   │       ├── orchestrator/.gitkeep
 │   │       ├── git/.gitkeep
 │   │       └── templates/.gitkeep
