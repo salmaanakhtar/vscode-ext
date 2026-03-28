@@ -68,15 +68,17 @@ These rules must never be violated under any circumstances. If you believe a rul
 │   ├── core/                        # Standalone agent engine (NO vscode deps)
 │   │   ├── package.json
 │   │   ├── tsconfig.json
+│   │   ├── vitest.config.ts
 │   │   └── src/
-│   │       ├── memory/              # MemoryAdapter + backends
+│   │       ├── memory/              # FileAdapter, SQLiteAdapter, MemoryManager
 │   │       ├── registry/            # TeamRegistry
-│   │       ├── runtime/             # AgentRuntime (Claude Code CLI subprocess)
+│   │       ├── runtime/             # AgentRuntime, ClaudeCliRunner, SystemPromptBuilder, checkClaude
 │   │       ├── messaging/           # MessageBus
 │   │       ├── approval/            # ApprovalGate
-│   │       ├── orchestrator/        # Orchestrator
-│   │       ├── git/                 # Git integration
-│   │       ├── templates/           # Agent template library
+│   │       ├── orchestrator/        # Orchestrator, TaskQueue
+│   │       ├── git/                 # Git integration (Phase 4.2)
+│   │       ├── templates/           # Agent template library (Phase 7)
+│   │       ├── __tests__/           # Unit tests mirroring src structure
 │   │       └── index.ts
 │   └── extension/                   # VS Code extension shell
 │       ├── package.json             # Extension manifest
@@ -126,7 +128,7 @@ This directory is created inside a **user's project** at runtime. It is not part
 
 These live in `packages/shared/src/types/`. Import from `@vscode-ext/shared` everywhere else. Never redefine these types in other packages.
 
-> **These are the implemented types as of Phase 1.2.** The source of truth is `packages/shared/src/types/index.ts`.
+> **These are the implemented types as of Phase 4.1.** The source of truth is `packages/shared/src/types/index.ts`.
 
 ```typescript
 // --- Primitive types ---
@@ -342,11 +344,12 @@ Branch naming convention:
 ```
 phase/1-1-monorepo-scaffold
 phase/1-2-shared-types
-phase/1-3-memory-adapter-interface
-phase/2-1-agent-runtime
-phase/2-2-session-management
-phase/3-1-orchestrator
-phase/3-2-approval-gate
+phase/2-1-memory-adapters
+phase/2-2-team-registry
+phase/3-1-agent-runtime
+phase/3-2-messagebus-approvalgate
+phase/4-1-orchestrator
+phase/4-2-git-integration
 ... etc
 ```
 
@@ -573,6 +576,18 @@ When suppressing `require()` usage inside source code, use the correct rule name
 ```
 
 The `@typescript-eslint/recommended` preset (v6) enables `@typescript-eslint/no-var-requires`, not `no-require-imports`. Always use `no-var-requires` for disable comments on `const x = require(...)` declarations.
+
+### Casting `vi.fn().mock.calls` entries in TypeScript
+
+Vitest's `mock.calls` is typed as `unknown[][]`. Casting a call entry directly to a tuple type (`as [string, string]`) causes TS2352 because `[]` does not sufficiently overlap. Always go through `unknown` first:
+
+```typescript
+// Wrong — TS2352
+const [a, b] = spy.mock.calls[0] as [string, string];
+
+// Correct
+const [a, b] = spy.mock.calls[0] as unknown as [string, string];
+```
 
 ### PHASE spec files may use non-canonical directory names
 
