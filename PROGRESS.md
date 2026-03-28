@@ -1,10 +1,10 @@
 # vscode-ext — Development Progress
 
 ## Last Updated
-2026-03-28T19:55:00Z
+2026-03-28T20:00:00Z
 
 ## Current Phase
-Phase 4 — Git Integration | Sub-phase 4.1 — Orchestrator (COMPLETE)
+Phase 4 — Git Integration | Sub-phase 4.2 — Git Integration (COMPLETE)
 
 ## Completed Sub-Phases
 - [x] 1.1 — Monorepo scaffold
@@ -14,27 +14,28 @@ Phase 4 — Git Integration | Sub-phase 4.1 — Orchestrator (COMPLETE)
 - [x] 3.1 — Agent Runtime (Claude Code CLI subprocess integration)
 - [x] 3.2 — MessageBus & ApprovalGate
 - [x] 4.1 — Orchestrator & TaskQueue
+- [x] 4.2 — Git Integration (GitManager)
 
 ## Current Branch
-main (phase/4.1-orchestrator merged and deleted)
+main (phase/4.2-git-integration merged and deleted)
 
 ## What Was Just Built
-`Orchestrator` in `packages/core/src/orchestrator/` and `TaskQueue` as a supporting class. `Orchestrator.handleUserMessage` runs the Team Lead, parses `DELEGATE:[agent-id]:[task]` lines from its output, executes delegations in parallel via `AgentRuntime`, then synthesises results back through the Team Lead. `runDirectTask` bypasses the Team Lead and sends a non-blocking notification to it afterwards. `TaskQueue` tracks task lifecycle (pending → running → complete/failed) with age-based clearing. 24 new unit tests; 163 total (all passing).
+`GitManager` in `packages/core/src/git/`. Provides per-agent git operations: `createBranch` (naming: `agent/[id]/[slug]`), `commit` (appends `[agent:id]` to message), `push`, `createPR` (via `gh` CLI), `merge`, `getStatus`, `listBranches`, `getCurrentBranch`, and a stub `getFileOwnership`. All operations enforce `GitPermissions` and return `Result<T>` — no throws. Moved `simple-git` from devDependencies to dependencies. 16 new unit tests; 179 total passing.
 
 ## Decisions Made This Session
-- Spec imported `MessageBus` from `'../bus/MessageBus'` — used canonical `messaging/` directory per CLAUDE.md.
-- Spec included an unused `runtime` variable in one delegation test — removed to satisfy ESLint `no-unused-vars`.
+- Spec test used `maxBudgetUsd` field (old name) — corrected to `maxTurns` per current shared types.
+- Spec test used `/bin/bash` shell (Unix-only) — replaced with `getCurrentBranch()` call for Windows compatibility.
 
 ## Known Issues / TODOs
 - Node.js v18 engine warnings from transitive deps — not a blocker.
 - `console.log` in extension.ts stub produces ESLint warnings — expected, intentional for stub.
-- chokidar file-change handler not tested directly (requires live FS events); covered by integration tests in a later phase.
+- `createPR` uses `execSync` with `gh` CLI — not unit-tested (requires real gh installation); covered in later integration phase.
 
 ## What The Next Session Should Do First
 1. Read CLAUDE.md and this PROGRESS.md in full.
-2. Load `_phases/PHASE-4.2.md` (Git Integration).
-3. Create branch: `git checkout main && git checkout -b phase/4.2-git-integration`
-4. Implement Git integration in `packages/core/src/git/`.
+2. Load `_phases/PHASE-5.1.md` (VS Code Extension Shell).
+3. Create branch: `git checkout main && git checkout -b phase/5.1-vscode-shell`
+4. Implement the VS Code extension shell in `packages/extension/src/`.
 5. Write unit tests with >80% coverage.
 6. Run `npm run typecheck && npm run lint && npm run test` — all must pass before pushing.
 
