@@ -62,11 +62,6 @@ export function registerCommands(
       vscode.window.showInformationMessage('vscode-ext: Add Agent — coming in Phase 5.2');
     }),
 
-    vscode.commands.registerCommand('projectname.openApprovalQueue', async () => {
-      // Stub — full implementation in Phase 6.1
-      vscode.window.showInformationMessage('vscode-ext: Approval Queue — coming in Phase 6.1');
-    }),
-
     vscode.commands.registerCommand('projectname.exportAgent', async () => {
       // Stub — full implementation in Phase 7.1
       vscode.window.showInformationMessage('vscode-ext: Export Agent — coming in Phase 7.1');

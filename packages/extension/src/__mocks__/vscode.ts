@@ -23,6 +23,7 @@ export const _reset = (): void => {
     },
   );
   window.createWebviewPanel.mockReset().mockReturnValue(mockPanel);
+  mockPanel.badge = undefined;
 };
 
 export const _triggerMessage = async (msg: unknown): Promise<void> => {
@@ -48,6 +49,7 @@ export const mockPanel = {
   webview: mockWebview,
   reveal: vi.fn(),
   dispose: vi.fn(),
+  badge: undefined as { value: number; tooltip: string } | undefined,
   onDidDispose: vi.fn().mockImplementation((cb: DisposeCallback) => {
     _disposeCallback = cb;
     return { dispose: vi.fn() };
@@ -68,6 +70,7 @@ export const Uri = {
 
 export const ViewColumn = {
   Two: 2 as const,
+  Three: 3 as const,
 };
 
 export const workspace = {

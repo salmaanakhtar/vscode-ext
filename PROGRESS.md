@@ -1,10 +1,10 @@
 # vscode-ext — Development Progress
 
 ## Last Updated
-2026-03-29T14:15:00Z
+2026-03-29T19:35:00Z
 
 ## Current Phase
-Phase 5 — VS Code Shell | Sub-phase 5.2 — Agent Panel UI (COMPLETE)
+Phase 6 — Approval Queue UI | Sub-phase 6.1 — Approval Queue UI (COMPLETE)
 
 ## Completed Sub-Phases
 - [x] 1.1 — Monorepo scaffold
@@ -17,28 +17,29 @@ Phase 5 — VS Code Shell | Sub-phase 5.2 — Agent Panel UI (COMPLETE)
 - [x] 4.2 — Git Integration (GitManager)
 - [x] 5.1 — VS Code Extension Shell
 - [x] 5.2 — Agent Panel UI
+- [x] 6.1 — Approval Queue UI
 
 ## Current Branch
-main (phase/5.2-agent-panel-ui merged and deleted)
+main (phase/6.1-approval-queue-ui merged and deleted)
 
 ## What Was Just Built
-`AgentPanel` webview in `packages/extension/src/panels/AgentPanel.ts` — an inline-HTML chat interface that posts/receives messages to/from the VS Code webview. It shows a chat window, agent status chips, and an agent selector. `extension.ts` wires the panel in and registers the `projectname.agentTeam.focus` command. 21 new unit tests added for the panel (200 total across all packages). Vitest config, vscode mock, and `__tests__/panels/` directory added to the extension package.
+`ApprovalQueuePanel` webview in `packages/extension/src/panels/ApprovalQueuePanel.ts` — polls `ApprovalGate.getPendingRequests()` every 1 second, renders pending approval cards with Approve/Reject buttons and optional feedback, stores resolutions in `workspaceState` for the polling handler in `ProjectNameSession` to pick up. Badge on panel tab shows pending count. Wired into `extension.ts` alongside `AgentPanel`. The `projectname.openApprovalQueue` stub removed from `commands/index.ts` and registered properly in `extension.ts`. 18 new unit tests added (39 total for extension package, 218 total across all packages).
 
 ## Decisions Made This Session
-- Omitted unused `fs` import from AgentPanel (spec listed it but it is never used — avoids lint error).
-- Test overrides typed as `Record<string, unknown>` (not `Partial<ProjectNameSession>`) to avoid structural type check failures against private Orchestrator fields.
-- `vscode` module aliased to `src/__mocks__/vscode.ts` in `vitest.config.ts` so tests run without the VS Code host.
+- `WebviewPanel.badge` exists at runtime (VS Code 1.79+) but is absent from the installed `@types/vscode@1.85` — accessed via `unknown` cast with comment.
+- `ApprovalRequest` import removed from panel (only `ApprovalResolution` is needed; request type is cast inline).
+- `projectname.openApprovalQueue` moved from `commands/index.ts` stub to `extension.ts` proper registration (same pattern as `agentTeam.focus`).
 
 ## Known Issues / TODOs
 - Node.js v18 engine warnings from transitive deps — not a blocker.
 - `createPR` uses `execSync` with `gh` CLI — not unit-tested (requires real gh); covered in later integration phase.
-- 8 pre-existing lint warnings in test files (`@typescript-eslint/explicit-function-return-type`) — warnings only, zero errors.
+- 10 pre-existing lint warnings in test files (`@typescript-eslint/explicit-function-return-type`) — warnings only, zero errors.
 
 ## What The Next Session Should Do First
 1. Read CLAUDE.md and this PROGRESS.md in full.
-2. Load `_phases/PHASE-6.1.md` (Approval Queue UI).
-3. Create branch: `git checkout main && git checkout -b phase/6.1-approval-queue`
-4. Implement the Approval Queue webview panel in `packages/extension/src/panels/`.
+2. Load `_phases/PHASE-7.1.md` (Templates, Agent Export/Import & Polish).
+3. Create branch: `git checkout main && git checkout -b phase/7.1-templates`
+4. Implement agent template library in `packages/core/src/templates/`.
 5. Write unit tests with >80% coverage.
 6. Run `npm run typecheck && npm run lint && npm run test` — all must pass before pushing.
 
@@ -128,9 +129,11 @@ vsdcode-ext/
 │           ├── statusbar/
 │           │   └── AgentStatusBar.ts
 │           ├── panels/
-│           │   └── AgentPanel.ts
+│           │   ├── AgentPanel.ts
+│           │   └── ApprovalQueuePanel.ts
 │           ├── providers/.gitkeep
 │           └── __tests__/
 │               └── panels/
-│                   └── AgentPanel.test.ts
+│                   ├── AgentPanel.test.ts
+│                   └── ApprovalQueuePanel.test.ts
 ```
