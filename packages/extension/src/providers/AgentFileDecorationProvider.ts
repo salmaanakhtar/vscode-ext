@@ -1,18 +1,26 @@
 import * as vscode from 'vscode';
 
+type FileState = 'active' | 'awaiting_approval';
+
+interface ActiveFileEntry {
+  agentId: string;
+  agentName: string;
+  state: FileState;
+}
+
 /**
  * Provides file tree decorations that indicate which files are currently
- * being worked on by an agent. The badge shows the first two letters of
- * the agent ID; the colour matches the git-modified resource colour.
+ * being worked on by an agent. Badge shows first two letters of agent ID.
+ * Blue = actively editing, yellow = awaiting approval.
  */
 export class AgentFileDecorationProvider implements vscode.FileDecorationProvider {
-  private readonly activeFiles = new Map<string, string>(); // fsPath → agentId
+  private readonly activeFiles = new Map<string, ActiveFileEntry>(); // fsPath → entry
   private readonly _onDidChange = new vscode.EventEmitter<vscode.Uri | vscode.Uri[]>();
   readonly onDidChangeFileDecorations = this._onDidChange.event;
 
   /** Mark a file as actively being edited by an agent. */
-  setActiveFile(filePath: string, agentId: string): void {
-    this.activeFiles.set(filePath, agentId);
+  setActiveFile(filePath: string, agentId: string, agentName: string, state: FileState = 'active'): void {
+    this.activeFiles.set(filePath, { agentId, agentName, state });
     this._onDidChange.fire(vscode.Uri.file(filePath));
   }
 
@@ -32,13 +40,17 @@ export class AgentFileDecorationProvider implements vscode.FileDecorationProvide
   }
 
   provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
-    const agentId = this.activeFiles.get(uri.fsPath);
-    if (!agentId) return undefined;
+    const entry = this.activeFiles.get(uri.fsPath);
+    if (!entry) return undefined;
+
+    const color = entry.state === 'awaiting_approval'
+      ? new vscode.ThemeColor('list.warningForeground')
+      : new vscode.ThemeColor('gitDecoration.modifiedResourceForeground');
 
     return {
-      badge: agentId.substring(0, 2).toUpperCase(),
-      tooltip: `Being modified by agent: ${agentId}`,
-      color: new vscode.ThemeColor('gitDecoration.modifiedResourceForeground'),
+      badge: entry.agentId.substring(0, 2).toUpperCase(),
+      tooltip: `Being worked on by: ${entry.agentName}`,
+      color,
     };
   }
 

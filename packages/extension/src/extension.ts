@@ -49,9 +49,42 @@ async function autoStart(_context: vscode.ExtensionContext): Promise<void> {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspaceRoot) return;
 
+  // Check claude CLI is available before attempting to start
+  const { checkClaudeInstalled } = await import('@vscode-ext/core');
+  const claudeCheck = checkClaudeInstalled();
+  if (!claudeCheck.installed) {
+    vscode.window.showErrorMessage(
+      `vscode-ext: Claude Code CLI not found. ${claudeCheck.error}`,
+      'Learn More',
+    ).then(choice => {
+      if (choice === 'Learn More') {
+        vscode.commands.executeCommand(
+          'vscode.open',
+          vscode.Uri.parse('https://claude.ai/download'),
+        );
+      }
+    });
+    return;
+  }
+
   const { TeamRegistry } = await import('@vscode-ext/core');
   const registry = new TeamRegistry(workspaceRoot);
-  const initialised = await registry.isInitialised();
+
+  let initialised: boolean;
+  try {
+    initialised = await registry.isInitialised();
+  } catch {
+    // Corrupt .agent/ directory — show actionable error
+    vscode.window.showErrorMessage(
+      'vscode-ext: Could not read agent team configuration. The .agent/ directory may be corrupt. Run "vscode-ext: Initialise Agent Team" to reinitialise.',
+      'Reinitialise',
+    ).then(choice => {
+      if (choice === 'Reinitialise') {
+        vscode.commands.executeCommand('projectname.initTeam');
+      }
+    });
+    return;
+  }
 
   if (initialised) {
     vscode.commands.executeCommand('projectname.startTeamLead');

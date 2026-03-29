@@ -24,6 +24,7 @@ export const _reset = (): void => {
   );
   window.createWebviewPanel.mockReset().mockReturnValue(mockPanel);
   mockPanel.badge = undefined;
+  mockPanel.title = '';
 };
 
 export const _triggerMessage = async (msg: unknown): Promise<void> => {
@@ -50,6 +51,7 @@ export const mockPanel = {
   reveal: vi.fn(),
   dispose: vi.fn(),
   badge: undefined as { value: number; tooltip: string } | undefined,
+  title: '',
   onDidDispose: vi.fn().mockImplementation((cb: DisposeCallback) => {
     _disposeCallback = cb;
     return { dispose: vi.fn() };

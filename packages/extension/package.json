@@ -48,6 +48,18 @@
       { "command": "projectname.importAgent", "title": "vscode-ext: Import Agent" },
       { "command": "projectname.viewProgress", "title": "vscode-ext: View Agent Progress" },
       { "command": "projectname.agentTeam.focus", "title": "vscode-ext: Open Agent Panel" }
+    ],
+    "keybindings": [
+      {
+        "command": "projectname.agentTeam.focus",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a"
+      },
+      {
+        "command": "projectname.openApprovalQueue",
+        "key": "ctrl+shift+q",
+        "mac": "cmd+shift+q"
+      }
     ]
   }
 }

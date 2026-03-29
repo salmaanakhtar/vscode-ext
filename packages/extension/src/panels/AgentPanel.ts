@@ -2,9 +2,16 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import type { ProjectNameSession } from '../ProjectNameSession';
 
+interface ChatMessage {
+  text: string;
+  sender: 'user' | 'agent';
+  agentId?: string;
+}
+
 export class AgentPanel {
   private panel: vscode.WebviewPanel | null = null;
   private disposables: vscode.Disposable[] = [];
+  private readonly historyKey = 'chat:history';
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -48,8 +55,13 @@ export class AgentPanel {
   }
 
   async pushState(): Promise<void> {
+    if (!this.panel) return;
+
     const session = this.getSession();
-    if (!this.panel || !session) return;
+    if (!session) {
+      this.panel.webview.postMessage({ type: 'noTeam' });
+      return;
+    }
 
     const agents = session.registry.getAllAgents();
     const statuses = session.runtime.getAllStatuses();
@@ -69,6 +81,16 @@ export class AgentPanel {
     this.panel?.dispose();
   }
 
+  private getHistory(): ChatMessage[] {
+    return this.context.workspaceState.get<ChatMessage[]>(this.historyKey) ?? [];
+  }
+
+  private async appendHistory(messages: ChatMessage[]): Promise<void> {
+    const history = this.getHistory();
+    const updated = [...history, ...messages].slice(-100);
+    await this.context.workspaceState.update(this.historyKey, updated);
+  }
+
   private async handleMessage(msg: { type: string; data?: unknown }): Promise<void> {
     const session = this.getSession();
 
@@ -76,7 +98,7 @@ export class AgentPanel {
       case 'sendMessage': {
         const { message, targetAgentId } = msg.data as { message: string; targetAgentId?: string };
         if (!session) {
-          await this.postMessage('error', 'No active session. Start Team Lead first.');
+          await this.postMessage('error', 'No agent team running. Run "vscode-ext: Initialise Agent Team" or "vscode-ext: Start Team Lead" first.');
           return;
         }
 
@@ -91,8 +113,13 @@ export class AgentPanel {
 
         if (result.success) {
           await this.postMessage('response', { text: result.data, agentId: targetAgentId ?? 'team-lead' });
+          await this.appendHistory([
+            { text: message, sender: 'user' },
+            { text: result.data as string, sender: 'agent', agentId: targetAgentId ?? 'team-lead' },
+          ]);
         } else {
           await this.postMessage('error', result.error.message);
+          await this.appendHistory([{ text: message, sender: 'user' }]);
         }
 
         await this.pushState();
@@ -103,9 +130,14 @@ export class AgentPanel {
         await this.pushState();
         break;
 
-      case 'ready':
+      case 'ready': {
         await this.pushState();
+        const history = this.getHistory();
+        if (history.length > 0) {
+          await this.postMessage('chatHistory', history);
+        }
         break;
+      }
     }
   }
 
@@ -130,19 +162,25 @@ export class AgentPanel {
     .message .agent-label { font-size: 11px; opacity: 0.7; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
     .input-row { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--vscode-panel-border); }
     .input-row input { flex: 1; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 6px 10px; border-radius: 4px; font-size: var(--vscode-font-size); }
+    .input-row input:disabled { opacity: 0.5; }
     .input-row button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; }
-    .input-row button:hover { background: var(--vscode-button-hoverBackground); }
+    .input-row button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+    .input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
     .agent-select { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 6px; border-radius: 4px; }
-    .status-bar { display: flex; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--vscode-panel-border); font-size: 11px; flex-wrap: wrap; }
+    .status-bar { display: flex; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--vscode-panel-border); font-size: 11px; flex-wrap: wrap; min-height: 28px; }
     .agent-chip { display: flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
-    .dot { width: 6px; height: 6px; border-radius: 50%; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
     .dot.idle { background: #888; }
     .dot.thinking, .dot.writing { background: #4ec9b0; animation: pulse 1s infinite; }
-    .dot.awaiting_approval { background: #ce9178; }
+    .dot.awaiting_approval { background: #ce9178; animation: pulse 1s infinite; }
     .dot.error { background: #f44747; }
     .dot.offline { background: #555; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
     .thinking-indicator { opacity: 0.6; font-style: italic; }
+    .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; opacity: 0.7; }
+    .empty-state h3 { font-size: 14px; }
+    .empty-state p { font-size: 12px; line-height: 1.5; }
+    .empty-state code { background: var(--vscode-textCodeBlock-background); padding: 2px 6px; border-radius: 3px; font-family: var(--vscode-editor-font-family); font-size: 11px; }
   </style>
 </head>
 <body>
@@ -169,6 +207,9 @@ export class AgentPanel {
     let isThinking = false;
 
     function addMessage(text, sender, agentId) {
+      const existing = document.getElementById('empty-state-el');
+      if (existing) existing.remove();
+
       const div = document.createElement('div');
       div.className = 'message ' + (sender === 'user' ? 'user' : 'agent');
       if (sender !== 'user' && agentId) {
@@ -184,13 +225,23 @@ export class AgentPanel {
       chat.scrollTop = chat.scrollHeight;
     }
 
+    function showEmptyState() {
+      if (chat.querySelector('.message') || document.getElementById('empty-state-el')) return;
+      const div = document.createElement('div');
+      div.id = 'empty-state-el';
+      div.className = 'empty-state';
+      div.innerHTML = '<h3>No agent team running</h3><p>Run <code>vscode-ext: Initialise Agent Team</code> to set up your team, or <code>vscode-ext: Start Team Lead</code> if already initialised.</p>';
+      chat.appendChild(div);
+    }
+
     function setThinking(agentId) {
       isThinking = true;
       sendBtn.disabled = true;
+      input.disabled = true;
       const div = document.createElement('div');
       div.className = 'message agent thinking-indicator';
       div.id = 'thinking-msg';
-      div.textContent = (agentId || 'team-lead') + ' is thinking...';
+      div.textContent = (agentId || 'team-lead') + ' is thinking\u2026';
       chat.appendChild(div);
       chat.scrollTop = chat.scrollHeight;
     }
@@ -198,6 +249,7 @@ export class AgentPanel {
     function clearThinking() {
       isThinking = false;
       sendBtn.disabled = false;
+      input.disabled = false;
       const msg = document.getElementById('thinking-msg');
       if (msg) msg.remove();
     }
@@ -224,7 +276,9 @@ export class AgentPanel {
         opt.textContent = '@' + a.id + ' (' + a.name + ')';
         agentSelect.appendChild(opt);
       });
-      agentSelect.value = current;
+      if (agents.some(a => a.id === current) || current === 'team-lead') {
+        agentSelect.value = current;
+      }
     }
 
     function send() {
@@ -246,6 +300,14 @@ export class AgentPanel {
         case 'stateUpdate':
           if (data.statuses) updateStatusBar(data.statuses);
           if (data.agents) updateAgentSelect(data.agents);
+          break;
+        case 'noTeam':
+          showEmptyState();
+          break;
+        case 'chatHistory':
+          if (Array.isArray(data) && data.length > 0) {
+            data.forEach(m => addMessage(m.text, m.sender, m.agentId));
+          }
           break;
         case 'thinking':
           setThinking(data.agentId);

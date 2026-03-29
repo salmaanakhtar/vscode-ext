@@ -177,6 +177,25 @@ describe('ApprovalQueuePanel', () => {
 
       expect(mockPanel.badge).toBeUndefined();
     });
+
+    it('updates panel title with count when there are pending requests', () => {
+      const session = makeSession([makePendingRequest(), makePendingRequest({ id: 'req-2' })]);
+      const panel = new ApprovalQueuePanel(makeContext(), () => session);
+      panel.show();
+
+      expect(mockPanel.title).toBe('vscode-ext Approvals (2)');
+    });
+
+    it('resets panel title when no pending requests', () => {
+      const session = makeSession([makePendingRequest()]);
+      const panel = new ApprovalQueuePanel(makeContext(), () => session);
+      panel.show();
+
+      (session.gate.getPendingRequests as ReturnType<typeof vi.fn>).mockReturnValue([]);
+      panel.refresh();
+
+      expect(mockPanel.title).toBe('vscode-ext Approvals');
+    });
   });
 
   // --------------------------------------------------------------------------
