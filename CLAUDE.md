@@ -635,6 +635,10 @@ const currentBranch = await gitManager.getCurrentBranch();
 
 When a test needs to know the current branch, call `GitManager.getCurrentBranch()` rather than shelling out.
 
+### TypeScript `lib` and `rootDir` in `packages/extension`
+
+`packages/extension/tsconfig.json` must **not** set `rootDir` or `lib`. Reason: the `paths` aliases map `@vscode-ext/core` → `../core/src` and `@vscode-ext/shared` → `../shared/src`, pulling those source files into the extension's compilation. Setting `rootDir: "src"` causes TS6059. Setting `lib: ["ES2022"]` (explicit) causes `AbortController`/`AbortSignal` to be missing because it uses the minimal lib — omitting `lib` defaults to the full `es2022` lib (which includes DOM types) and matches the core package's behaviour.
+
 ---
 
 ## Definition of Done
