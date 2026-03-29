@@ -676,6 +676,20 @@ When a test needs to know the current branch, call `GitManager.getCurrentBranch(
 
 `packages/extension/tsconfig.json` must **not** set `rootDir` or `lib`. Reason: the `paths` aliases map `@vscode-ext/core` → `../core/src` and `@vscode-ext/shared` → `../shared/src`, pulling those source files into the extension's compilation. Setting `rootDir: "src"` causes TS6059. Setting `lib: ["ES2022"]` (explicit) causes `AbortController`/`AbortSignal` to be missing because it uses the minimal lib — omitting `lib` defaults to the full `es2022` lib (which includes DOM types) and matches the core package's behaviour.
 
+### `WebviewPanel.badge` missing from `@types/vscode`
+
+`WebviewPanel.badge` exists at runtime (VS Code 1.79+) but is absent from `@types/vscode@1.85`. Setting it directly causes TS2339. Access it via an `unknown` cast with a comment:
+
+```typescript
+// badge exists on WebviewPanel at runtime (VS Code 1.79+) but is absent from @types/vscode here
+const panelWithBadge = this.panel as unknown as { badge?: { value: number; tooltip: string } };
+panelWithBadge.badge = { value: count, tooltip: `${count} pending approval(s)` };
+// or clear it:
+panelWithBadge.badge = undefined;
+```
+
+In the vscode mock (`src/__mocks__/vscode.ts`) add `badge: undefined` to `mockPanel` and reset it in `_reset()` so tests can assert on its value.
+
 ---
 
 ## Definition of Done
