@@ -5,3 +5,4 @@ export * from './messaging';
 export * from './approval';
 export * from './orchestrator';
 export * from './git';
+export * from './templates';

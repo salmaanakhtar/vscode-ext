@@ -1,10 +1,10 @@
 # vscode-ext — Development Progress
 
 ## Last Updated
-2026-03-29T19:35:00Z
+2026-03-29T20:00:00Z
 
 ## Current Phase
-Phase 6 — Approval Queue UI | Sub-phase 6.1 — Approval Queue UI (COMPLETE)
+Phase 7 — Templates, Polish & End-to-End Testing | Sub-phase 7.1 — Agent Template Library (COMPLETE)
 
 ## Completed Sub-Phases
 - [x] 1.1 — Monorepo scaffold
@@ -18,30 +18,34 @@ Phase 6 — Approval Queue UI | Sub-phase 6.1 — Approval Queue UI (COMPLETE)
 - [x] 5.1 — VS Code Extension Shell
 - [x] 5.2 — Agent Panel UI
 - [x] 6.1 — Approval Queue UI
+- [x] 7.1 — Agent Template Library, Export/Import, File Decorations, E2E Tests
 
 ## Current Branch
-main (phase/6.1-approval-queue-ui merged and deleted)
+main (phase/7.1-templates merged and deleted)
 
 ## What Was Just Built
-`ApprovalQueuePanel` webview in `packages/extension/src/panels/ApprovalQueuePanel.ts` — polls `ApprovalGate.getPendingRequests()` every 1 second, renders pending approval cards with Approve/Reject buttons and optional feedback, stores resolutions in `workspaceState` for the polling handler in `ProjectNameSession` to pick up. Badge on panel tab shows pending count. Wired into `extension.ts` alongside `AgentPanel`. The `projectname.openApprovalQueue` stub removed from `commands/index.ts` and registered properly in `extension.ts`. 18 new unit tests added (39 total for extension package, 218 total across all packages).
+
+`packages/core/src/templates/` — full agent template library with 8 built-in templates (frontend, backend, qa, security, devops, documentation, database, reviewer) and 4 team presets (fullstack-web, api-service, open-source, solo). `TemplateLibrary` class provides `instantiateFromTemplate` and `instantiateFromPreset`. `AgentExporter` handles gzip-compressed .agentpack export/import with sessionId stripping and memory summarisation. `AgentFileDecorationProvider` in the extension layer shows which files agents are editing. Extension commands `addAgent`, `exportAgent`, `importAgent` now fully implemented with QuickPick/save dialogs. 47 new tests added (269 total across all packages).
 
 ## Decisions Made This Session
-- `WebviewPanel.badge` exists at runtime (VS Code 1.79+) but is absent from the installed `@types/vscode@1.85` — accessed via `unknown` cast with comment.
-- `ApprovalRequest` import removed from panel (only `ApprovalResolution` is needed; request type is cast inline).
-- `projectname.openApprovalQueue` moved from `commands/index.ts` stub to `extension.ts` proper registration (same pattern as `agentTeam.focus`).
+- `.agentpack` uses gzip-compressed JSON (no external ZIP library needed — uses Node.js built-in `zlib`)
+- `generateAgentId` uses the random hex tail of `generateId()` output to ensure uniqueness even in rapid successive calls
+- `AgentFileDecorationProvider` registered via `vscode.window.registerFileDecorationProvider` in `extension.ts`; `clearAll()` called on `deactivate()`
+- Phase 7 spec files (PHASE-7.md and PHASE-7.1.md) diverge in naming — CLAUDE.md canonical names used throughout (`claudeMdTemplate`, `TeamPreset.agents`, `AgentModel`, `maxTurns`)
 
 ## Known Issues / TODOs
-- Node.js v18 engine warnings from transitive deps — not a blocker.
-- `createPR` uses `execSync` with `gh` CLI — not unit-tested (requires real gh); covered in later integration phase.
-- 10 pre-existing lint warnings in test files (`@typescript-eslint/explicit-function-return-type`) — warnings only, zero errors.
+- Node.js v18 engine warnings from transitive deps — not a blocker
+- `createPR` uses `execSync` with `gh` CLI — not unit-tested (requires real gh)
+- 10 pre-existing lint warnings in test files (`@typescript-eslint/explicit-function-return-type`) — warnings only, zero errors
 
 ## What The Next Session Should Do First
 1. Read CLAUDE.md and this PROGRESS.md in full.
-2. Load `_phases/PHASE-7.1.md` (Templates, Agent Export/Import & Polish).
-3. Create branch: `git checkout main && git checkout -b phase/7.1-templates`
-4. Implement agent template library in `packages/core/src/templates/`.
-5. Write unit tests with >80% coverage.
-6. Run `npm run typecheck && npm run lint && npm run test` — all must pass before pushing.
+2. Load `_phases/PHASE-7.md` sub-phases 7.3–7.5 (UX Polish, E2E Tests, Release Prep).
+3. Create branch: `git checkout main && git checkout -b phase/7.3-ux-polish`
+4. Sub-phase 7.3 — audit and fix UX flows (empty states, error states, loading states, keyboard shortcuts).
+5. Sub-phase 7.4 — additional end-to-end workflow tests for chat delegation and git workflows.
+6. Sub-phase 7.5 — README, CONTRIBUTING, CHANGELOG, package as `.vsix`, GitHub v0.1.0 release.
+7. Run `npm run typecheck && npm run lint && npm run test` — all must pass before pushing.
 
 ## File Tree Snapshot
 ```
@@ -57,83 +61,40 @@ vsdcode-ext/
 │   └── (all PHASE-*.md files)
 ├── packages/
 │   ├── shared/
-│   │   ├── package.json
-│   │   ├── tsconfig.json
-│   │   ├── vitest.config.ts
 │   │   └── src/
-│   │       ├── index.ts
 │   │       ├── types/index.ts
 │   │       ├── interfaces/MemoryAdapter.ts
 │   │       ├── constants/index.ts
-│   │       ├── utils/paths.ts
-│   │       ├── utils/id.ts
-│   │       ├── utils/logger.ts
-│   │       ├── utils/validation.ts
-│   │       └── __tests__/
-│   │           ├── id.test.ts
-│   │           ├── paths.test.ts
-│   │           └── validation.test.ts
+│   │       ├── utils/ (paths, id, logger, validation)
+│   │       └── __tests__/ (3 test files)
 │   ├── core/
-│   │   ├── package.json
-│   │   ├── tsconfig.json
-│   │   ├── vitest.config.ts
 │   │   └── src/
-│   │       ├── index.ts
-│   │       ├── memory/
-│   │       │   ├── FileAdapter.ts
-│   │       │   ├── SQLiteAdapter.ts
-│   │       │   ├── MemoryManager.ts
-│   │       │   └── index.ts
-│   │       ├── registry/
-│   │       │   ├── TeamRegistry.ts
-│   │       │   └── index.ts
-│   │       ├── runtime/
-│   │       │   ├── checkClaude.ts
-│   │       │   ├── ClaudeCliRunner.ts
-│   │       │   ├── SystemPromptBuilder.ts
-│   │       │   ├── AgentRuntime.ts
-│   │       │   └── index.ts
-│   │       ├── messaging/
-│   │       │   ├── MessageBus.ts
-│   │       │   └── index.ts
-│   │       ├── approval/
-│   │       │   ├── ApprovalGate.ts
-│   │       │   └── index.ts
-│   │       ├── orchestrator/
-│   │       │   ├── Orchestrator.ts
-│   │       │   ├── TaskQueue.ts
-│   │       │   └── index.ts
-│   │       ├── git/
-│   │       │   ├── GitManager.ts
+│   │       ├── memory/ (FileAdapter, SQLiteAdapter, MemoryManager)
+│   │       ├── registry/ (TeamRegistry)
+│   │       ├── runtime/ (AgentRuntime, ClaudeCliRunner, SystemPromptBuilder, checkClaude)
+│   │       ├── messaging/ (MessageBus)
+│   │       ├── approval/ (ApprovalGate)
+│   │       ├── orchestrator/ (Orchestrator, TaskQueue)
+│   │       ├── git/ (GitManager)
+│   │       ├── templates/
+│   │       │   ├── AgentTemplates.ts   ← NEW: 8 templates, 4 presets
+│   │       │   ├── TemplateLibrary.ts  ← NEW
+│   │       │   ├── AgentExporter.ts    ← NEW: .agentpack export/import
 │   │       │   └── index.ts
 │   │       └── __tests__/
-│   │           ├── memory/
-│   │           ├── registry/
-│   │           ├── runtime/
-│   │           ├── messaging/
-│   │           ├── approval/
-│   │           ├── orchestrator/
-│   │           └── git/
+│   │           ├── templates/
+│   │           │   ├── TemplateLibrary.test.ts  ← NEW
+│   │           │   └── AgentExporter.test.ts    ← NEW
+│   │           └── integration/
+│   │               └── e2e.test.ts              ← NEW
 │   └── extension/
-│       ├── package.json
-│       ├── tsconfig.json
-│       ├── vitest.config.ts
-│       ├── resources/icon.svg
 │       └── src/
-│           ├── extension.ts
+│           ├── extension.ts             ← updated: registers AgentFileDecorationProvider
 │           ├── ProjectNameSession.ts
-│           ├── __mocks__/
-│           │   └── vscode.ts
-│           ├── commands/
-│           │   └── index.ts
-│           ├── statusbar/
-│           │   └── AgentStatusBar.ts
-│           ├── panels/
-│           │   ├── AgentPanel.ts
-│           │   └── ApprovalQueuePanel.ts
-│           ├── providers/.gitkeep
-│           └── __tests__/
-│               └── panels/
-│                   ├── AgentPanel.test.ts
-│                   └── ApprovalQueuePanel.test.ts
+│           ├── commands/index.ts        ← updated: addAgent, exportAgent, importAgent implemented
+│           ├── providers/
+│           │   └── AgentFileDecorationProvider.ts  ← NEW
+│           ├── panels/ (AgentPanel, ApprovalQueuePanel)
+│           ├── statusbar/ (AgentStatusBar)
+│           └── __tests__/ (AgentPanel, ApprovalQueuePanel tests)
 ```

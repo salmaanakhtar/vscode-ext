@@ -3,10 +3,12 @@ import { registerCommands, getSession } from './commands';
 import { AgentStatusBar } from './statusbar/AgentStatusBar';
 import { AgentPanel } from './panels/AgentPanel';
 import { ApprovalQueuePanel } from './panels/ApprovalQueuePanel';
+import { AgentFileDecorationProvider } from './providers/AgentFileDecorationProvider';
 
 let statusBar: AgentStatusBar;
 let agentPanel: AgentPanel;
 let approvalQueuePanel: ApprovalQueuePanel;
+let fileDecorationProvider: AgentFileDecorationProvider;
 
 export function activate(context: vscode.ExtensionContext): void {
   registerCommands(context);
@@ -19,6 +21,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
   statusBar = new AgentStatusBar(getSession);
   context.subscriptions.push({ dispose: () => statusBar.dispose() });
+
+  fileDecorationProvider = new AgentFileDecorationProvider();
+  context.subscriptions.push(
+    vscode.window.registerFileDecorationProvider(fileDecorationProvider),
+    { dispose: () => fileDecorationProvider.dispose() },
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('projectname.agentTeam.focus', () => {
@@ -34,6 +42,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
   getSession()?.dispose();
+  fileDecorationProvider?.clearAll();
 }
 
 async function autoStart(_context: vscode.ExtensionContext): Promise<void> {
