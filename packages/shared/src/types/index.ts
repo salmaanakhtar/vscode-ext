@@ -164,7 +164,11 @@ export interface TeamPreset {
   id: string;
   name: string;
   description: string;
-  agentTemplateIds: string[];
+  agents: Array<{
+    templateId: string;
+    customName?: string;
+    modelOverride?: AgentModel;
+  }>;
 }
 
 export interface AgentStatus {

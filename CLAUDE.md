@@ -279,7 +279,11 @@ interface TeamPreset {
   id: string;
   name: string;
   description: string;
-  agentTemplateIds: string[];
+  agents: Array<{
+    templateId: string;
+    customName?: string;
+    modelOverride?: AgentModel;
+  }>;
 }
 
 interface AgentStatus {
@@ -325,6 +329,7 @@ interface MemoryAdapter {
 | Memory (default) | Local markdown/JSON files via Node.js `fs` |
 | Memory (SQLite) | `better-sqlite3` |
 | Git Operations | `simple-git` |
+| Agent Pack (export/import) | `archiver` + `unzipper` (Phase 7.2, `packages/core`) |
 | File Watching | `chokidar` |
 | Testing | `vitest` |
 | Bundler | `esbuild` |
@@ -618,6 +623,12 @@ The `_phases/PHASE-N.M.md` spec files are written ahead of implementation and ma
 | `bus/` | `messaging/` |
 | `gate/` | `approval/` |
 | `maxBudgetUsd` (Agent field) | `maxTurns` |
+| `ModelId` (Phase 7 `AgentTemplate.defaultModel`) | `AgentModel` |
+| `ActionType` (Phase 7 `AgentTemplate.defaultApprovalRequired`) | `RiskAction` |
+| `claudeMd` (Phase 7 `AgentTemplate` field) | `claudeMdTemplate` |
+| `tools: AgentTools` (Phase 7 `AgentTemplate` field) | `defaultTools: string[]` |
+| `TeamPreset.agentTemplateIds: string[]` (old canonical) | `TeamPreset.agents: Array<{ templateId, customName?, modelOverride? }>` (updated Phase 7.1) |
+| `ProjectNameCore` (Phase 7.4 e2e facade) | No canonical equivalent — e2e tests should construct `TeamRegistry`, `Orchestrator`, etc. directly |
 
 When a spec names a directory or field, verify it matches the canonical name here before creating files. If it differs, use the canonical name and note the divergence in PROGRESS.md.
 
