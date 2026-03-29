@@ -142,14 +142,14 @@ describe('AgentPanel', () => {
       expect(mockWebview.postMessage).not.toHaveBeenCalled();
     });
 
-    it('is a no-op when no session', async () => {
+    it('posts noTeam message when no session', async () => {
       const panel = new AgentPanel(makeContext(), () => null);
       panel.show();
       mockWebview.postMessage.mockClear();
 
       await panel.pushState();
 
-      expect(mockWebview.postMessage).not.toHaveBeenCalled();
+      expect(mockWebview.postMessage).toHaveBeenCalledWith({ type: 'noTeam' });
     });
   });
 
@@ -239,7 +239,7 @@ describe('AgentPanel', () => {
 
       expect(mockWebview.postMessage).toHaveBeenCalledWith({
         type: 'error',
-        data: 'No active session. Start Team Lead first.',
+        data: expect.stringContaining('No agent team running'),
       });
     });
 
@@ -305,6 +305,43 @@ describe('AgentPanel', () => {
       mockWebview.postMessage.mockClear();
 
       await expect(_triggerMessage({ type: 'unknown' })).resolves.not.toThrow();
+    });
+
+    it('ready message sends chatHistory when history exists in workspaceState', async () => {
+      const history = [
+        { text: 'hello', sender: 'user' },
+        { text: 'hi there', sender: 'agent', agentId: 'team-lead' },
+      ];
+      const context = {
+        extensionPath: '/ext',
+        subscriptions: [],
+        workspaceState: {
+          get: vi.fn().mockReturnValue(history),
+          update: vi.fn().mockResolvedValue(undefined),
+        },
+      } as unknown as import('vscode').ExtensionContext;
+
+      const session = makeSession();
+      const panel = new AgentPanel(context, () => session);
+      panel.show();
+      mockWebview.postMessage.mockClear();
+
+      await _triggerMessage({ type: 'ready' });
+
+      expect(mockWebview.postMessage).toHaveBeenCalledWith({ type: 'chatHistory', data: history });
+    });
+
+    it('ready message does not send chatHistory when history is empty', async () => {
+      const session = makeSession();
+      const panel = new AgentPanel(makeContext(), () => session);
+      panel.show();
+      mockWebview.postMessage.mockClear();
+
+      await _triggerMessage({ type: 'ready' });
+
+      const chatHistoryCalls = (mockWebview.postMessage as ReturnType<typeof vi.fn>).mock.calls
+        .filter((c: unknown[]) => (c[0] as { type: string }).type === 'chatHistory');
+      expect(chatHistoryCalls).toHaveLength(0);
     });
   });
 });
