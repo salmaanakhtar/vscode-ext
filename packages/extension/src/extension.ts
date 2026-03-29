@@ -1,14 +1,25 @@
 import * as vscode from 'vscode';
 import { registerCommands, getSession } from './commands';
 import { AgentStatusBar } from './statusbar/AgentStatusBar';
+import { AgentPanel } from './panels/AgentPanel';
 
 let statusBar: AgentStatusBar;
+let agentPanel: AgentPanel;
 
 export function activate(context: vscode.ExtensionContext): void {
   registerCommands(context);
 
+  agentPanel = new AgentPanel(context, getSession);
+  context.subscriptions.push({ dispose: () => agentPanel.dispose() });
+
   statusBar = new AgentStatusBar(getSession);
   context.subscriptions.push({ dispose: () => statusBar.dispose() });
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('projectname.agentTeam.focus', () => {
+      agentPanel.show();
+    }),
+  );
 
   autoStart(context);
 }
