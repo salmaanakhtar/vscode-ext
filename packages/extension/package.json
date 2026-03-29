@@ -11,6 +11,8 @@
   "scripts": {
     "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "watch": "npm run build -- --watch",
     "package": "vsce package"
   },
@@ -44,7 +46,8 @@
       { "command": "projectname.openApprovalQueue", "title": "vscode-ext: Open Approval Queue" },
       { "command": "projectname.exportAgent", "title": "vscode-ext: Export Agent" },
       { "command": "projectname.importAgent", "title": "vscode-ext: Import Agent" },
-      { "command": "projectname.viewProgress", "title": "vscode-ext: View Agent Progress" }
+      { "command": "projectname.viewProgress", "title": "vscode-ext: View Agent Progress" },
+      { "command": "projectname.agentTeam.focus", "title": "vscode-ext: Open Agent Panel" }
     ]
   }
 }
