@@ -589,7 +589,33 @@ export default defineConfig({
 });
 ```
 
-Apply the same pattern to `packages/extension/vitest.config.ts` when tests are added there.
+Apply the same pattern to `packages/extension/vitest.config.ts`. The extension config additionally aliases `vscode` to the mock (see below):
+
+```typescript
+import path from 'path';
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      vscode: path.resolve(__dirname, 'src/__mocks__/vscode.ts'),
+      '@vscode-ext/shared': path.resolve(__dirname, '../shared/src'),
+      '@vscode-ext/core': path.resolve(__dirname, '../core/src'),
+    },
+  },
+  // ...
+});
+```
+
+### VS Code module mock for extension tests
+
+Extension tests cannot import the real `vscode` module (no VS Code host in Vitest). Alias it via `vitest.config.ts` and maintain a manual mock at `packages/extension/src/__mocks__/vscode.ts`. The mock must export:
+
+- `window.createWebviewPanel` — returns a `mockPanel` with `webview`, `reveal`, `dispose`, `onDidDispose`
+- `mockWebview.postMessage`, `onDidReceiveMessage`
+- Test helpers: `_reset()` (resets all mocks between tests), `_triggerMessage(msg)` (simulates webview → extension message), `_triggerDispose()` (fires panel dispose)
+- `Uri.file`, `ViewColumn`, `workspace`, `commands`
+
+Call `_reset()` in `beforeEach` so mock state never leaks between tests.
 
 ### ESLint disable for dynamic `require()`
 
