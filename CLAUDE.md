@@ -561,7 +561,9 @@ Focus: Code quality, consistency with existing patterns, constructive feedback
 | 4 | Git Integration | PHASE-4.md | ✅ complete |
 | 5 | VS Code Shell | PHASE-5.md | ✅ complete |
 | 6 | Approval Queue UI | PHASE-6.md | ✅ complete |
-| 7 | Templates, Polish & E2E | PHASE-7.md | 7.1–7.4 ✅ · 7.5 pending |
+| 7 | Templates, Polish & E2E | PHASE-7.md | ✅ complete |
+
+> **Project status: v0.1.0 RELEASED.** All phases complete. See PROGRESS.md for the full summary and v2 backlog.
 
 Start each phase by reading CLAUDE.md, then PROGRESS.md, then the relevant PHASE-N.md file.
 
