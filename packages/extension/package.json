@@ -3,9 +3,17 @@
   "displayName": "vscode-ext",
   "description": "Persistent AI agent teams for your VS Code projects",
   "version": "0.1.0",
+  "publisher": "salmaanakhtar",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/salmaanakhtar/vscode-ext.git"
+  },
+  "keywords": ["ai", "agents", "claude", "llm", "team", "automation", "copilot"],
+  "icon": "resources/icon.png",
   "engines": { "vscode": "^1.85.0" },
-  "categories": ["AI", "Other"],
+  "categories": ["AI", "Machine Learning", "Other"],
   "activationEvents": ["onStartupFinished"],
   "main": "./dist/extension.js",
   "scripts": {
