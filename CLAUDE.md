@@ -78,7 +78,10 @@ These rules must never be violated under any circumstances. If you believe a rul
 │   │       ├── orchestrator/        # Orchestrator, TaskQueue
 │   │       ├── git/                 # GitManager — branch, commit, push, PR, merge
 │   │       ├── templates/           # Agent template library (Phase 7)
-│   │       ├── __tests__/           # Unit tests mirroring src structure
+│   │       ├── __tests__/
+│   │       │   ├── [module]/        # Unit tests mirroring src structure
+│   │       │   ├── integration/     # Module integration tests (e2e.test.ts)
+│   │       │   └── e2e/             # Workflow end-to-end tests (setup.ts + 5 workflow files)
 │   │       └── index.ts
 │   └── extension/                   # VS Code extension shell
 │       ├── package.json             # Extension manifest
@@ -128,7 +131,7 @@ This directory is created inside a **user's project** at runtime. It is not part
 
 These live in `packages/shared/src/types/`. Import from `@vscode-ext/shared` everywhere else. Never redefine these types in other packages.
 
-> **These are the implemented types as of Phase 4.2.** The source of truth is `packages/shared/src/types/index.ts`.
+> **These are the implemented types as of Phase 7.1.** The source of truth is `packages/shared/src/types/index.ts`.
 
 ```typescript
 // --- Primitive types ---
@@ -329,7 +332,7 @@ interface MemoryAdapter {
 | Memory (default) | Local markdown/JSON files via Node.js `fs` |
 | Memory (SQLite) | `better-sqlite3` |
 | Git Operations | `simple-git` |
-| Agent Pack (export/import) | `archiver` + `unzipper` (Phase 7.2, `packages/core`) |
+| Agent Pack (export/import) | Node.js built-in `zlib` (gzip/gunzip) — `AgentExporter` in `packages/core/src/templates/` |
 | File Watching | `chokidar` |
 | Testing | `vitest` |
 | Bundler | `esbuild` |
@@ -550,15 +553,15 @@ Focus: Code quality, consistency with existing patterns, constructive feedback
 
 ## Phase Overview
 
-| Phase | Name | Prompt File |
-|-------|------|-------------|
-| 1 | Foundation | PHASE-1.md |
-| 2 | Agent Runtime | PHASE-2.md |
-| 3 | Orchestration & Approval | PHASE-3.md |
-| 4 | Git Integration | PHASE-4.md |
-| 5 | VS Code Shell | PHASE-5.md |
-| 6 | Approval Queue UI | PHASE-6.md |
-| 7 | Templates, Polish & E2E | PHASE-7.md |
+| Phase | Name | Prompt File | Status |
+|-------|------|-------------|--------|
+| 1 | Foundation | PHASE-1.md | ✅ complete |
+| 2 | Agent Runtime | PHASE-2.md | ✅ complete |
+| 3 | Orchestration & Approval | PHASE-3.md | ✅ complete |
+| 4 | Git Integration | PHASE-4.md | ✅ complete |
+| 5 | VS Code Shell | PHASE-5.md | ✅ complete |
+| 6 | Approval Queue UI | PHASE-6.md | ✅ complete |
+| 7 | Templates, Polish & E2E | PHASE-7.md | 7.1–7.4 ✅ · 7.5 pending |
 
 Start each phase by reading CLAUDE.md, then PROGRESS.md, then the relevant PHASE-N.md file.
 
@@ -675,6 +678,27 @@ When a test needs to know the current branch, call `GitManager.getCurrentBranch(
 ### TypeScript `lib` and `rootDir` in `packages/extension`
 
 `packages/extension/tsconfig.json` must **not** set `rootDir` or `lib`. Reason: the `paths` aliases map `@vscode-ext/core` → `../core/src` and `@vscode-ext/shared` → `../shared/src`, pulling those source files into the extension's compilation. Setting `rootDir: "src"` causes TS6059. Setting `lib: ["ES2022"]` (explicit) causes `AbortController`/`AbortSignal` to be missing because it uses the minimal lib — omitting `lib` defaults to the full `es2022` lib (which includes DOM types) and matches the core package's behaviour.
+
+### `TaskQueue.update()` creates a new object — original reference is not mutated
+
+`TaskQueue.update()` does `{ ...task, ...updates }` and stores the result back in the Map. The original `Task` reference returned by `create()` is **not mutated**. Consequences for tests:
+
+- `onTaskComplete(queuedTask, output)` in `Orchestrator` passes the original `queuedTask` reference, which still has `status: 'pending'`. Do **not** assert `task.status === 'complete'` on the argument passed to `onTaskComplete`.
+- To assert the final status of a delegated task, use `orch.getAllTasks()[n].status` — this reads from the Map and returns the updated object.
+
+### E2E test strategy (`packages/core/src/__tests__/e2e/`)
+
+Five workflow test files cover the full agent lifecycle. Strategy per file:
+
+| File | Approach |
+|------|----------|
+| `workflow-init` | Real temp filesystem + real `TeamRegistry` + real `TemplateLibrary` |
+| `workflow-chat` | Stub registry + stub runtime (no CLI) — same pattern as `Orchestrator.test.ts` |
+| `workflow-approval` | Real temp filesystem + real `ApprovalGate` |
+| `workflow-git` | Real temp git repo + real `GitManager` — same pattern as `GitManager.test.ts` |
+| `workflow-export` | Real temp filesystem + real `AgentExporter` + real `TeamRegistry` |
+
+Never use a real Claude CLI subprocess in e2e tests. Mock `AgentRuntime.runTask` instead.
 
 ### `WebviewPanel.badge` missing from `@types/vscode`
 
